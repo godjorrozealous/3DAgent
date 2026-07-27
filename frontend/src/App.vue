@@ -9,6 +9,9 @@ import ReportViewer from './components/ReportViewer.vue'
 import ChatModal from './components/ChatModal.vue'
 import ReportModal from './components/ReportModal.vue'
 import CompareModal from './components/CompareModal.vue'
+import SavePromptModal from './components/SavePromptModal.vue'
+import ConfirmToolModal from './components/ConfirmToolModal.vue'
+import ReportReviewModal from './components/ReportReviewModal.vue'
 
 const canvasHost = ref(null)
 const leftOpen = ref(true)
@@ -144,5 +147,11 @@ onMounted(() => {
     <ReportModal />
     <!-- 实时/复盘比对弹窗 -->
     <CompareModal />
+    <!-- 策略保存提醒弹窗 -->
+    <SavePromptModal />
+    <!-- 工具结论确认弹窗 -->
+    <ConfirmToolModal />
+    <!-- 复盘报告审核弹窗 -->
+    <ReportReviewModal />
   </div>
 </template>
