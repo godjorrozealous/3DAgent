@@ -307,9 +307,9 @@ class AgentManager:
                         await self._dispatch_objections()
                         # 报告审核循环:反复询问指挥员「报告是否符合要求?」,最多 5 轮
                         for _ in range(5):
-                            await self.broadcast({"type": "report_review_request"})
                             self._review_event = asyncio.Event()
                             self._review_response = {}
+                            await self.broadcast({"type": "report_review_request"})
                             try:
                                 await asyncio.wait_for(self._review_event.wait(), timeout=1800)
                             except asyncio.TimeoutError:
