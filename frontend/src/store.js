@@ -20,6 +20,16 @@ export const store = reactive({
   excludedTools: [],     // 当前会话排除的工具
   strategies: [],        // 已保存的干预策略
   compare: null,         // 复盘对比 { baseline, replay }
+  summaries: { realtime: null, replay: null }, // 双摘要 report_summary 事件体
+  templates: [],
+  skills: [],
+  defaultSkill: '',
+  confirmQueue: [],      // tool_confirm_request 队列，响应后 shift
+  savePrompt: null,      // null | { interventions, context }
+  reportReviewPending: false,
+  reportModal: null,     // null | { title, content }
+  compareOpen: false,
+  valueOverrides: {},    // session_snapshot.overrides
 })
 
 export function pushLog(entry) {

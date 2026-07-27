@@ -46,6 +46,26 @@ function handle(event) {
       store.sessionId = event.session_id
       store.weights = event.weights || {}
       store.excludedTools = event.excluded_tools || []
+      store.valueOverrides = event.overrides || {}
+      break
+    case 'report_summary':
+      store.summaries[event.kind] = event
+      break
+    case 'prompt_save_strategy':
+      store.savePrompt = { interventions: event.interventions, context: event.context }
+      break
+    case 'tool_confirm_request':
+      store.confirmQueue.push(event)
+      break
+    case 'report_review_request':
+      store.reportReviewPending = true
+      break
+    case 'templates':
+      store.templates = event.templates
+      break
+    case 'skills':
+      store.skills = event.skills
+      store.defaultSkill = event.default_skill
       break
     case 'strategy_saved':
       store.strategies.push(event.strategy)
@@ -93,3 +113,16 @@ export function sendChat(agent, message) {
   })
   send({ type: 'chat', agent, message })
 }
+
+export const listTemplates = () => send({ type: 'list_templates' })
+export const activateTemplate = (name) => send({ type: 'activate_template', name })
+export const deleteTemplate = (name) => send({ type: 'delete_template', name })
+export const listSkills = () => send({ type: 'list_skills' })
+export const activateSkill = (name) => send({ type: 'activate_skill', name })
+export const resetSkills = () => send({ type: 'reset_skills' })
+export const sendToolConfirm = (tool, decision, value) =>
+  send({ type: 'tool_confirm_response', tool, decision, value })
+export const sendReportReview = (satisfied, instruction) =>
+  send({ type: 'report_review_response', satisfied, instruction })
+export const respondSavePrompt = (save) =>
+  send({ type: 'save_prompt_response', save })
