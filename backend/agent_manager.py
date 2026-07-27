@@ -58,6 +58,7 @@ class AgentManager:
         self._confirms_done: asyncio.Event | None = None
         self._review_event: asyncio.Event | None = None
         self._review_response: dict = {}
+        self._chat_tasks: set[asyncio.Task] = set()
 
     # ---------- 连接管理 ----------
     async def connect(self, ws: WebSocket):
@@ -117,7 +118,9 @@ class AgentManager:
             agent = data.get("agent", "commander")
             message = str(data.get("message", "")).strip()
             if agent in AGENTS and message:
-                asyncio.create_task(self.handle_chat(agent, message))
+                task = asyncio.create_task(self.handle_chat(agent, message))
+                self._chat_tasks.add(task)
+                task.add_done_callback(self._chat_tasks.discard)
         elif mtype == "list_templates":
             await self.send_templates()
         elif mtype == "activate_template":
@@ -223,6 +226,9 @@ class AgentManager:
         run_record: dict = {"replay": replay, "time": datetime.datetime.now().strftime("%H:%M:%S")}
         try:
             await self.set_status("commander", "running")
+            # 等待进行中的 chat 干预任务完成，避免其触发的自动重诊断与本次诊断冲突
+            if self._chat_tasks:
+                await asyncio.gather(*list(self._chat_tasks), return_exceptions=True)
             await self._wait_pld_idle()
             if replay:
                 await self.log("commander", "【复盘】按已保存的人工干预策略重新执行诊断，验证策略是否生效。")

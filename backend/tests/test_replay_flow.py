@@ -60,6 +60,38 @@ async def test_replay_emits_confirm_and_dispatches_objection(monkeypatch):
     assert any("排除" in m for m in sent[1:])  # sent[0] 是诊断消息本身
 
 
+async def test_replay_waits_for_inflight_chat(monkeypatch):
+    started = []
+    chat_gate = asyncio.Event()
+
+    async def blocking_chat(agent, message):
+        await chat_gate.wait()
+
+    async def fake_stream(msg):
+        started.append("diagnosis started")
+        yield {"event_type": "start", "payload": {}, "session_id": "s1"}
+
+    async def fake_session(sid):
+        return SESSION
+
+    monkeypatch.setattr(agent_manager.pld_client, "chat_stream", fake_stream)
+    monkeypatch.setattr(agent_manager.pld_client, "get_session", fake_session)
+    mgr = agent_manager.AgentManager()
+    mgr.session_id = "s1"
+    monkeypatch.setattr(mgr, "handle_chat", blocking_chat)
+    ws = FakeWS()
+    await mgr.connect(ws)
+
+    await mgr.handle_message({"type": "chat", "agent": "commander", "message": "排除鸟害工具"})
+    await mgr.handle_message({"type": "replay"})
+    await asyncio.sleep(0.1)
+    # chat 干预仍在进行，诊断流不得启动
+    assert "diagnosis started" not in started
+    chat_gate.set()
+    await mgr.current_task
+    assert "diagnosis started" in started
+
+
 async def test_realtime_no_confirm(monkeypatch):
     sent = []
     mgr = make_mgr(monkeypatch, sent)
