@@ -1,6 +1,6 @@
 <script setup>
 import { computed, defineComponent, h } from 'vue'
-import { store } from '../store'
+import { store, LINES } from '../store'
 
 // 内联摘要卡组件：props { title, kind, data }
 const SummaryCard = defineComponent({
@@ -96,7 +96,7 @@ const SummaryCard = defineComponent({
   },
 })
 
-const lineTitle = computed(() => `${store.LINES[0].line} · ${store.LINES[0].tower}`)
+const lineTitle = computed(() => `${LINES[0].line} · ${LINES[0].tower}`)
 const canCompare = computed(() => !!store.summaries.realtime && !!store.summaries.replay)
 </script>
 
