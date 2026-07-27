@@ -1,43 +1,127 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, defineComponent, h } from 'vue'
 import { store } from '../store'
 
-function escapeHtml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
+// 内联摘要卡组件：props { title, kind, data }
+const SummaryCard = defineComponent({
+  props: {
+    title: { type: String, required: true },
+    kind: { type: String, required: true }, // 'realtime' | 'replay'
+    data: { type: Object, default: null },  // report_summary 事件体，null 表示无数据
+  },
+  setup(props) {
+    const ACCENT = {
+      realtime: {
+        border: 'border-cyan-400/20',
+        dot: 'bg-cyan-300',
+        text: 'text-cyan-200',
+        btn: 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50 hover:bg-cyan-400/30',
+      },
+      replay: {
+        border: 'border-emerald-400/20',
+        dot: 'bg-emerald-300',
+        text: 'text-emerald-200',
+        btn: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50 hover:bg-emerald-400/30',
+      },
+    }
+    const short = (t) => String(t ?? '—').replace('DiagnosisTool', '')
+    const confPct = (c) => (c == null ? null : Math.round(c <= 1 ? c * 100 : c))
+    const confClass = (c) => {
+      const v = c <= 1 ? c : c / 100
+      if (v >= 0.7) return 'text-emerald-300'
+      if (v >= 0.4) return 'text-amber-300'
+      return 'text-red-300'
+    }
+    function openReport() {
+      store.reportModal = {
+        title: `${props.kind === 'realtime' ? '实时' : '复盘'}诊断报告`,
+        content: props.data?.report || '',
+      }
+    }
+    const field = (label, vnode) =>
+      h('div', { class: 'flex items-center justify-between gap-2 py-0.5' }, [
+        h('span', { class: 'text-slate-500 shrink-0' }, label),
+        vnode,
+      ])
+    const textVal = (v, cls = 'text-slate-200') =>
+      h('span', { class: `${cls} truncate` }, v == null || v === '' ? '—' : String(v))
 
-// 轻量 Markdown 渲染（先转义再替换，避免 XSS）
-function renderMd(md) {
-  let h = escapeHtml(md)
-  h = h.replace(/^### (.*)$/gm, '<h3>$1</h3>')
-  h = h.replace(/^## (.*)$/gm, '<h2>$1</h2>')
-  h = h.replace(/^# (.*)$/gm, '<h1>$1</h1>')
-  h = h.replace(/^---$/gm, '<hr/>')
-  h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  // 列表
-  h = h.replace(/(?:^|\n)((?:- .*(?:\n|$))+)/g, (m, block) => {
-    const items = block.trim().split('\n').map((l) => `<li>${l.replace(/^- /, '')}</li>`).join('')
-    return `\n<ul>${items}</ul>`
-  })
-  h = h.replace(/\n{2,}/g, '<br/><br/>').replace(/\n/g, '<br/>')
-  return h
-}
+    return () => {
+      const a = ACCENT[props.kind] || ACCENT.realtime
+      const d = props.data
+      const s = d?.summary || {}
+      const header = h('div', { class: `px-3 py-1.5 border-b ${a.border} flex items-center gap-2 shrink-0` }, [
+        h('span', { class: `w-1.5 h-1.5 rounded-full ${a.dot}` }),
+        h('span', { class: `${a.text} text-[11px] font-bold tracking-widest` }, props.title),
+      ])
 
-const html = computed(() => renderMd(store.report))
+      if (!d) {
+        return h('div', { class: 'glass rounded-lg flex flex-col overflow-hidden' }, [
+          header,
+          h('div', { class: 'px-4 py-5 text-center text-slate-500 italic text-[12px]' },
+            props.kind === 'realtime' ? '等待诊断……' : '尚未复盘'),
+        ])
+      }
+
+      const pct = confPct(s.confidence)
+      const fields = h('div', { class: 'px-3 py-2 text-[11px] leading-snug' }, [
+        field('线路名称', textVal(s.line_name)),
+        field('电压等级', textVal(s.voltage_level)),
+        field('故障时间', textVal(s.fault_time)),
+        field('故障类型', textVal(s.fault_type)),
+        field('置信度', pct == null
+          ? textVal(null)
+          : h('span', { class: `font-bold ${confClass(s.confidence)}` }, `${pct}%`)),
+      ])
+
+      const logs = d.action_log || s.action_log || []
+      const tags = logs.length
+        ? h('div', { class: 'px-3 pb-2 flex flex-wrap gap-1' },
+            logs.map((l, i) =>
+              h('span', {
+                key: i,
+                class: 'text-[10px] px-1.5 py-0.5 rounded border border-slate-600/50 bg-slate-800/60 text-slate-300',
+              }, `${l.action_type || '干预'} ${short(l.tool_name || '')}`.trim())))
+        : null
+
+      const btn = h('div', { class: 'px-3 pb-2.5 mt-auto' }, [
+        h('button', {
+          class: `w-full text-[11px] font-bold py-1 rounded border ${a.btn}`,
+          onClick: openReport,
+        }, '查看报告'),
+      ])
+
+      return h('div', { class: 'glass rounded-lg flex flex-col overflow-hidden' }, [header, fields, tags, btn])
+    }
+  },
+})
+
+const lineTitle = computed(() => `${store.LINES[0].line} · ${store.LINES[0].tower}`)
+const canCompare = computed(() => !!store.summaries.realtime && !!store.summaries.replay)
 </script>
 
 <template>
-  <aside class="glass rounded-lg flex flex-col pointer-events-auto h-full">
-    <div class="px-3 py-2 border-b border-cyan-500/20 flex items-center justify-between">
-      <span class="text-cyan-300 text-xs font-bold tracking-widest">诊断报告 ◣</span>
-      <span v-if="store.report && !store.reportDone" class="text-amber-300 text-[10px] animate-pulse">生成中…</span>
-      <span v-else-if="store.reportDone" class="text-emerald-300 text-[10px]">✓ 已签发</span>
-    </div>
-    <div class="flex-1 overflow-y-auto px-4 py-3 text-[12px] text-slate-200 leading-relaxed">
-      <div v-if="!store.report" class="text-slate-500 italic h-full flex items-center justify-center text-center">
-        司令员签发的诊断报告<br />将在此实时呈现
+  <aside class="glass rounded-lg flex flex-col pointer-events-auto h-full overflow-hidden">
+    <!-- 头部：标题 + 线路 -->
+    <div class="px-3 py-2 border-b border-cyan-500/20 shrink-0">
+      <div class="flex items-center justify-between">
+        <span class="text-cyan-300 text-xs font-bold tracking-widest">📋 诊断报告</span>
       </div>
-      <div v-else class="md-body" v-html="html"></div>
+      <div class="text-slate-300 text-[11px] mt-1 truncate">{{ lineTitle }}</div>
+    </div>
+
+    <!-- 双摘要卡 -->
+    <div class="flex-1 overflow-y-auto p-2 flex flex-col gap-2 min-h-0">
+      <SummaryCard title="实时诊断" kind="realtime" :data="store.summaries.realtime" />
+      <SummaryCard title="复盘诊断" kind="replay" :data="store.summaries.replay" />
+    </div>
+
+    <!-- 比对入口 -->
+    <div v-if="canCompare" class="px-2 pb-2 shrink-0">
+      <button
+        @click="store.compareOpen = true"
+        class="w-full text-[11px] font-bold py-1.5 rounded border bg-emerald-500/20 text-emerald-200 border-emerald-400/50 hover:bg-emerald-400/30"
+      >比对</button>
     </div>
   </aside>
 </template>

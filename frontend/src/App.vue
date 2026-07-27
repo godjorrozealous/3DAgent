@@ -7,7 +7,8 @@ import TopBar from './components/TopBar.vue'
 import EventStream from './components/EventStream.vue'
 import ReportViewer from './components/ReportViewer.vue'
 import ChatModal from './components/ChatModal.vue'
-import ReplayPanel from './components/ReplayPanel.vue'
+import ReportModal from './components/ReportModal.vue'
+import CompareModal from './components/CompareModal.vue'
 
 const canvasHost = ref(null)
 const leftOpen = ref(true)
@@ -98,7 +99,9 @@ onMounted(() => {
 
     <!-- 双击智能体弹出的直聊终端 -->
     <ChatModal />
-    <!-- 复盘对比面板 -->
-    <ReplayPanel />
+    <!-- 查看报告弹窗 -->
+    <ReportModal />
+    <!-- 实时/复盘比对弹窗 -->
+    <CompareModal />
   </div>
 </template>

@@ -1,0 +1,59 @@
+<script setup>
+import { computed } from 'vue'
+import { store } from '../store'
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// 轻量 Markdown 渲染（先转义再替换，避免 XSS；迁移自旧 ReportViewer）
+function renderMd(md) {
+  let h = escapeHtml(md)
+  h = h.replace(/^### (.*)$/gm, '<h3>$1</h3>')
+  h = h.replace(/^## (.*)$/gm, '<h2>$1</h2>')
+  h = h.replace(/^# (.*)$/gm, '<h1>$1</h1>')
+  h = h.replace(/^---$/gm, '<hr/>')
+  h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  // 列表
+  h = h.replace(/(?:^|\n)((?:- .*(?:\n|$))+)/g, (m, block) => {
+    const items = block.trim().split('\n').map((l) => `<li>${l.replace(/^- /, '')}</li>`).join('')
+    return `\n<ul>${items}</ul>`
+  })
+  h = h.replace(/\n{2,}/g, '<br/><br/>').replace(/\n/g, '<br/>')
+  return h
+}
+
+const html = computed(() => (store.reportModal ? renderMd(store.reportModal.content || '') : ''))
+
+function close() {
+  store.reportModal = null
+}
+</script>
+
+<template>
+  <div
+    v-if="store.reportModal"
+    class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center pointer-events-auto"
+    @click.self="close"
+  >
+    <div
+      class="glass w-full max-w-3xl max-h-[80vh] rounded-xl flex flex-col overflow-hidden mx-4"
+      style="box-shadow: 0 0 50px rgba(34,211,238,.25)"
+    >
+      <!-- 标题栏 -->
+      <div class="flex items-center justify-between px-4 py-2.5 bg-cyan-500/10 border-b border-cyan-400/30 shrink-0">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-cyan-300 animate-pulse"></span>
+          <span class="text-cyan-200 text-sm font-bold">{{ store.reportModal.title }}</span>
+        </div>
+        <button @click="close" class="text-slate-400 hover:text-red-300 text-lg leading-none px-1">×</button>
+      </div>
+
+      <!-- 内容区 -->
+      <div class="flex-1 overflow-y-auto px-5 py-4 text-[12px] text-slate-200 leading-relaxed">
+        <div v-if="!store.reportModal.content" class="text-slate-500 italic text-center py-8">报告内容为空</div>
+        <div v-else class="md-body" v-html="html"></div>
+      </div>
+    </div>
+  </div>
+</template>
