@@ -89,3 +89,43 @@ async def test_no_prompt_without_intervention(monkeypatch):
     ws.events.clear()
     await mgr.run_diagnosis(replay=False)
     assert not [e for e in ws.events if e["type"] == "prompt_save_strategy"]
+
+
+def areturn(value):
+    async def f(*a, **kw):
+        return value
+    return f
+
+
+async def test_skill_and_template_messages(monkeypatch):
+    mgr = make_manager(monkeypatch, COMPLETE_STREAM, SESSION)
+    calls = []
+
+    async def fake_stream(msg):
+        calls.append(msg)
+        yield {"event_type": "complete", "payload": {"report": "r", "summary": {}}, "session_id": "s1"}
+
+    monkeypatch.setattr(agent_manager.pld_client, "chat_stream", fake_stream)
+    monkeypatch.setattr(agent_manager.pld_client, "list_templates",
+                        areturn({"templates": [{"name": "t.docx", "is_active": False}]}))
+    monkeypatch.setattr(agent_manager.pld_client, "activate_template",
+                        areturn({"success": True, "active_template": "t.docx"}))
+    monkeypatch.setattr(agent_manager.pld_client, "list_skills",
+                        areturn({"skills": [{"name": "s1", "description": "d", "is_default": True, "source": "系统"}]}))
+    monkeypatch.setattr(agent_manager.pld_client, "get_default_skill",
+                        areturn({"default_skill": "s1", "available_skills": ["s1"]}))
+    monkeypatch.setattr(agent_manager.pld_client, "set_default_skill",
+                        areturn({"success": True}))
+
+    ws = FakeWS()
+    await mgr.connect(ws)
+    await mgr.handle_message({"type": "list_templates"})
+    assert any(e["type"] == "templates" for e in ws.events)
+    await mgr.handle_message({"type": "list_skills"})
+    skills_ev = [e for e in ws.events if e["type"] == "skills"]
+    assert skills_ev and skills_ev[0]["default_skill"] == "s1"
+    await mgr.handle_message({"type": "activate_skill", "name": "s1"})
+    assert mgr.local_interventions == 1
+    await mgr.handle_message({"type": "activate_template", "name": "t.docx"})
+    assert mgr.local_interventions == 2
+    assert any("模板" in c for c in calls)  # 自动重整指令已下发

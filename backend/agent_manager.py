@@ -112,6 +112,65 @@ class AgentManager:
             message = str(data.get("message", "")).strip()
             if agent in AGENTS and message:
                 asyncio.create_task(self.handle_chat(agent, message))
+        elif mtype == "list_templates":
+            await self.send_templates()
+        elif mtype == "activate_template":
+            await self.activate_template(str(data.get("name", "")))
+        elif mtype == "delete_template":
+            await pld_client.delete_template(str(data.get("name", "")))
+            await self.send_templates()
+        elif mtype == "list_skills":
+            await self.send_skills()
+        elif mtype == "activate_skill":
+            name = str(data.get("name", ""))
+            await pld_client.set_default_skill(name)
+            self.local_interventions += 1
+            await self.log("commander", f"诊断策略已切换为「{name}」（全局默认）。")
+            await self.send_skills()
+        elif mtype == "reset_skills":
+            await pld_client.reset_skills()
+            self.local_interventions += 1
+            await self.log("commander", "已重置为默认诊断策略。")
+            await self.send_skills()
+            await self._refresh_snapshot()
+        elif mtype == "save_prompt_response":
+            if data.get("save"):
+                await self.save_strategy()
+
+    # ---------- 模板 / 策略管理 ----------
+    async def send_templates(self):
+        try:
+            data = await pld_client.list_templates()
+            await self.broadcast({"type": "templates", "templates": data.get("templates", [])})
+        except Exception as exc:  # noqa: BLE001
+            await self.log("audit", f"模板列表获取失败:{exc}")
+
+    async def send_skills(self):
+        try:
+            skills = (await pld_client.list_skills()).get("skills", [])
+            default = (await pld_client.get_default_skill()).get("default_skill", "")
+            await self.broadcast({"type": "skills", "skills": skills, "default_skill": default})
+        except Exception as exc:  # noqa: BLE001
+            await self.log("commander", f"策略列表获取失败:{exc}")
+
+    async def activate_template(self, name: str):
+        if not name:
+            return
+        result = await pld_client.activate_template(name)
+        if not result.get("success"):
+            await self.log("audit", f"模板「{name}」激活失败。")
+            return
+        self.local_interventions += 1
+        await self.log("audit", f"模板「{name}」已激活，按模板章节结构重整报告……")
+        await self.send_templates()
+        # 激活即重整：走 modify_report 意图
+        async for event in pld_client.chat_stream("请严格按当前激活模板的章节结构重整当前诊断报告"):
+            if event.get("event_type") == "complete":
+                report = event.get("payload", {}).get("report")
+                if report:
+                    self.last_report = report
+                    await self.broadcast({"type": "report", "content": report, "done": True})
+        await self._refresh_snapshot()
 
     async def _start_run(self, replay: bool):
         if self.current_task and not self.current_task.done():
