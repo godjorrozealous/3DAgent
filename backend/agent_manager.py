@@ -56,6 +56,8 @@ class AgentManager:
         self.confirm_decisions: dict[str, dict] = {}  # tool -> {decision, value?}
         self.value_overrides: dict[str, str] = {}     # tool -> 改后数值文本（随 snapshot 下发）
         self._confirms_done: asyncio.Event | None = None
+        self._review_event: asyncio.Event | None = None
+        self._review_response: dict = {}
 
     # ---------- 连接管理 ----------
     async def connect(self, ws: WebSocket):
@@ -150,6 +152,10 @@ class AgentManager:
                 del self.pending_confirms[tool]
                 if not self.pending_confirms and self._confirms_done:
                     self._confirms_done.set()
+        elif mtype == "report_review_response":
+            self._review_response = data
+            if self._review_event:
+                self._review_event.set()
 
     # ---------- 模板 / 策略管理 ----------
     async def send_templates(self):
@@ -299,6 +305,27 @@ class AgentManager:
                                 await self.log("commander", "确认等待超时，按无异议继续。")
                                 self.pending_confirms.clear()
                         await self._dispatch_objections()
+                        # 报告审核循环:反复询问指挥员「报告是否符合要求?」,最多 5 轮
+                        for _ in range(5):
+                            await self.broadcast({"type": "report_review_request"})
+                            self._review_event = asyncio.Event()
+                            self._review_response = {}
+                            try:
+                                await asyncio.wait_for(self._review_event.wait(), timeout=1800)
+                            except asyncio.TimeoutError:
+                                break
+                            if self._review_response.get("satisfied"):
+                                break
+                            instruction = str(self._review_response.get("instruction", "")).strip()
+                            if not instruction:
+                                break
+                            await self.log("audit", f"按指挥员意见修改报告:{instruction}")
+                            await self._wait_pld_idle()
+                            async for ev in pld_client.chat_stream(instruction):
+                                p = ev.get("payload", {})
+                                if ev.get("event_type") == "complete" and p.get("report"):
+                                    self.last_report = p["report"]
+                                    await self.broadcast({"type": "report", "content": p["report"], "done": True})
                     await self._finish_run(run_record, summary, replay)
                 elif etype == "error":
                     raise RuntimeError(payload.get("message", "PLDiagnosis 返回错误"))

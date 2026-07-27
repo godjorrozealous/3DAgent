@@ -1,3 +1,4 @@
+import asyncio
 import json
 import pytest
 import agent_manager
@@ -60,7 +61,13 @@ async def test_report_summary_replay_kind(monkeypatch):
     mgr = make_manager(monkeypatch, COMPLETE_STREAM, SESSION)
     ws = FakeWS()
     await mgr.connect(ws)
-    await mgr.run_diagnosis(replay=True)
+
+    async def respond():
+        await asyncio.sleep(0.3)
+        # 复盘末段的报告审核询问:直接满意,结束审核循环
+        await mgr.handle_message({"type": "report_review_response", "satisfied": True})
+
+    await asyncio.gather(mgr.run_diagnosis(replay=True), respond())
     rs = [e for e in ws.events if e["type"] == "report_summary"]
     assert rs[0]["kind"] == "replay"
 

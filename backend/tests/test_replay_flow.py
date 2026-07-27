@@ -47,6 +47,9 @@ async def test_replay_emits_confirm_and_dispatches_objection(monkeypatch):
                                   "tool": "LightningDiagnosisTool",
                                   "decision": "exclude"})
         assert mgr.confirm_decisions["LightningDiagnosisTool"]["decision"] == "exclude"
+        await asyncio.sleep(0.3)
+        # 异议下发后的报告审核询问:直接满意,结束审核循环
+        await mgr.handle_message({"type": "report_review_response", "satisfied": True})
 
     await asyncio.gather(mgr.run_diagnosis(replay=True), respond())
     confirms = [e for e in ws.events if e["type"] == "tool_confirm_request"]
@@ -64,3 +67,30 @@ async def test_realtime_no_confirm(monkeypatch):
     await mgr.connect(ws)
     await mgr.run_diagnosis(replay=False)
     assert not [e for e in ws.events if e["type"] == "tool_confirm_request"]
+
+
+async def test_report_review_loop(monkeypatch):
+    sent = []
+    mgr = make_mgr(monkeypatch, sent)
+    ws = FakeWS()
+    await mgr.connect(ws)
+
+    async def respond():
+        await asyncio.sleep(0.3)
+        # 先确认工具结果(无异议),否则 run 不会进入报告审核循环
+        await mgr.handle_message({"type": "tool_confirm_response",
+                                  "tool": "LightningDiagnosisTool",
+                                  "decision": "ok"})
+        await asyncio.sleep(0.3)
+        # 第一轮:不满意,要求删第三章
+        await mgr.handle_message({"type": "report_review_response",
+                                  "satisfied": False, "instruction": "删除第三章"})
+        await asyncio.sleep(0.3)
+        # 第二轮:满意
+        await mgr.handle_message({"type": "report_review_response",
+                                  "satisfied": True})
+
+    await asyncio.gather(mgr.run_diagnosis(replay=True), respond())
+    reviews = [e for e in ws.events if e["type"] == "report_review_request"]
+    assert len(reviews) == 2
+    assert any("删除第三章" in m for m in sent[1:])  # sent[0] 是诊断消息本身
