@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  background: #030712;
+  overflow: hidden;
+}
+
+/* 玻璃拟态面板 */
+.glass {
+  background: rgba(8, 20, 38, 0.72);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  box-shadow: 0 0 24px rgba(34, 211, 238, 0.08), inset 0 0 32px rgba(34, 211, 238, 0.04);
+}
+
+.neon-text {
+  text-shadow: 0 0 8px rgba(34, 211, 238, 0.8);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.35);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 报告 Markdown 基础排版 */
+.md-body h1 { font-size: 1.15rem; font-weight: 700; color: #67e8f9; margin: 0.6rem 0 0.4rem; }
+.md-body h2 { font-size: 1rem; font-weight: 700; color: #22d3ee; margin: 0.7rem 0 0.3rem; border-bottom: 1px solid rgba(34,211,238,.2); padding-bottom: .2rem; }
+.md-body h3 { font-size: 0.88rem; font-weight: 600; color: #a5f3fc; margin: 0.5rem 0 0.2rem; }
+.md-body p { margin: 0.3rem 0; }
+.md-body ul { list-style: disc; padding-left: 1.1rem; margin: 0.25rem 0; }
+.md-body li { margin: 0.15rem 0; }
+.md-body strong { color: #fde68a; }
+.md-body hr { border-color: rgba(34,211,238,.25); margin: 0.6rem 0; }
