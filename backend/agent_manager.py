@@ -50,6 +50,8 @@ class AgentManager:
         self.saved_strategies: list[dict] = []
         self.last_report: str = ""
         self.last_summaries: dict[str, dict] = {}   # "realtime"|"replay" -> report_summary 事件体
+        self.local_interventions: int = 0        # 模板/策略类操作（PLD action_log 之外的干预）
+        self._action_count_at_start: int = 0     # 本轮开始时 PLD action_log 长度
 
     # ---------- 连接管理 ----------
     async def connect(self, ws: WebSocket):
@@ -218,6 +220,10 @@ class AgentManager:
             if self.status["audit"] == "running":
                 await self.set_status("audit", "idle")
 
+    def _count_interventions(self, session: dict | None) -> int:
+        delta = len((session or {}).get("action_log", [])) - self._action_count_at_start
+        return max(delta, 0) + self.local_interventions
+
     async def _mark_tools_running(self):
         """工具执行阶段：四个诊断席位并行进入 RUNNING（视觉错峰）。"""
         async def stagger(aid: str, delay: float):
@@ -281,6 +287,17 @@ class AgentManager:
             "excluded_tools": excluded,
             "summary": summary,
         })
+
+        n = self._count_interventions(session)
+        if n > 0:
+            await self.broadcast({
+                "type": "prompt_save_strategy",
+                "interventions": n,
+                "context": "replay" if replay else "realtime",
+            })
+        # 基线滚动：下一轮只统计本轮结束后新增的干预
+        self._action_count_at_start = len((session or {}).get("action_log", []))
+        self.local_interventions = 0
 
         # 复盘：与首轮基线对比，验证策略是否生效
         if replay and self.run_history:
