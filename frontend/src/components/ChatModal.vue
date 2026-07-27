@@ -138,10 +138,10 @@ async function onUpload(e) {
               <span class="text-slate-200 truncate">{{ s.name }}</span>
               <span
                 class="shrink-0 text-[10px] px-1.5 rounded border"
-                :class="s.source === 'system'
+                :class="s.is_default
                   ? 'bg-slate-600/30 text-slate-300 border-slate-500/40'
                   : 'bg-cyan-500/15 text-cyan-300 border-cyan-400/40'"
-              >{{ s.source === 'system' ? '系统' : '用户自定义' }}</span>
+              >{{ s.is_default ? '系统' : '用户自定义' }}</span>
             </div>
             <div v-if="s.description" class="text-[10px] text-slate-500 truncate">{{ s.description }}</div>
           </div>
