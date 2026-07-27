@@ -58,3 +58,46 @@ async def save_skill(name: str, content: str) -> dict:
             f"{PLD_BASE}/api/skills", json={"name": name, "content": content}
         )
         return resp.json()
+
+
+# ---------- 策略（技能） ----------
+async def list_skills() -> dict:
+    async with httpx.AsyncClient(base_url=PLD_BASE, timeout=30) as c:
+        return (await c.get("/api/skills")).json()
+
+
+async def get_default_skill() -> dict:
+    async with httpx.AsyncClient(base_url=PLD_BASE, timeout=30) as c:
+        return (await c.get("/api/skills/default")).json()
+
+
+async def set_default_skill(name: str) -> dict:
+    async with httpx.AsyncClient(base_url=PLD_BASE, timeout=30) as c:
+        return (await c.post("/api/skills/default", json={"name": name})).json()
+
+
+async def reset_skills() -> dict:
+    async with httpx.AsyncClient(base_url=PLD_BASE, timeout=30) as c:
+        return (await c.post("/api/skills/reset")).json()
+
+
+# ---------- 模板 ----------
+async def list_templates() -> dict:
+    async with httpx.AsyncClient(base_url=PLD_BASE, timeout=30) as c:
+        return (await c.get("/api/templates")).json()
+
+
+async def upload_template(file_bytes: bytes, filename: str) -> dict:
+    async with httpx.AsyncClient(base_url=PLD_BASE, timeout=60) as c:
+        files = {"file": (filename, file_bytes)}
+        return (await c.post("/api/templates/upload", files=files)).json()
+
+
+async def activate_template(name: str) -> dict:
+    async with httpx.AsyncClient(base_url=PLD_BASE, timeout=30) as c:
+        return (await c.post("/api/templates/activate", json={"template_name": name})).json()
+
+
+async def delete_template(name: str) -> dict:
+    async with httpx.AsyncClient(base_url=PLD_BASE, timeout=30) as c:
+        return (await c.delete(f"/api/templates/{name}")).json()
