@@ -52,6 +52,10 @@ class AgentManager:
         self.last_summaries: dict[str, dict] = {}   # "realtime"|"replay" -> report_summary 事件体
         self.local_interventions: int = 0        # 模板/策略类操作（PLD action_log 之外的干预）
         self._action_count_at_start: int = 0     # 本轮开始时 PLD action_log 长度
+        self.pending_confirms: dict[str, dict] = {}   # tool -> 待确认的 tool_confirm_request 体
+        self.confirm_decisions: dict[str, dict] = {}  # tool -> {decision, value?}
+        self.value_overrides: dict[str, str] = {}     # tool -> 改后数值文本（随 snapshot 下发）
+        self._confirms_done: asyncio.Event | None = None
 
     # ---------- 连接管理 ----------
     async def connect(self, ws: WebSocket):
@@ -136,6 +140,16 @@ class AgentManager:
         elif mtype == "save_prompt_response":
             if data.get("save"):
                 await self.save_strategy()
+        elif mtype == "tool_confirm_response":
+            tool = str(data.get("tool", ""))
+            if tool in self.pending_confirms:
+                self.confirm_decisions[tool] = {
+                    "decision": data.get("decision", "ok"),
+                    "value": data.get("value"),
+                }
+                del self.pending_confirms[tool]
+                if not self.pending_confirms and self._confirms_done:
+                    self._confirms_done.set()
 
     # ---------- 模板 / 策略管理 ----------
     async def send_templates(self):
@@ -253,6 +267,15 @@ class AgentManager:
                         if raw:
                             report_buf += f"\n\n## 📡 {AGENTS[aid]['name']}原始诊断\n\n{raw}\n"
                             await self.broadcast({"type": "report", "content": report_buf, "done": False})
+                        if replay and aid:
+                            self.pending_confirms[tool] = {
+                                "type": "tool_confirm_request",
+                                "agent": aid, "tool": tool,
+                                "fault_type": fault, "confidence": conf,
+                                "evidence": evid,
+                                "override": self.value_overrides.get(tool),
+                            }
+                            await self.broadcast(self.pending_confirms[tool])
                 elif etype == "content":
                     chunk = payload.get("content", "")
                     if chunk:
@@ -266,6 +289,16 @@ class AgentManager:
                     run_record["report"] = report
                     run_record["tools_run"] = sorted(tools_done)
                     await self.broadcast({"type": "report", "content": report, "done": True})
+                    if replay:
+                        self._confirms_done = asyncio.Event()
+                        if self.pending_confirms:
+                            await self.log("commander", "等待指挥员逐项确认各工具诊断结果……")
+                            try:
+                                await asyncio.wait_for(self._confirms_done.wait(), timeout=1800)
+                            except asyncio.TimeoutError:
+                                await self.log("commander", "确认等待超时，按无异议继续。")
+                                self.pending_confirms.clear()
+                        await self._dispatch_objections()
                     await self._finish_run(run_record, summary, replay)
                 elif etype == "error":
                     raise RuntimeError(payload.get("message", "PLDiagnosis 返回错误"))
@@ -278,6 +311,40 @@ class AgentManager:
                     await self.set_status(aid, "idle")
             if self.status["audit"] == "running":
                 await self.set_status("audit", "idle")
+
+    async def _dispatch_objections(self):
+        """复盘确认后的异议处理：逐条下发 PLD（recheck/exclude/adjust_weight/手动改值）。"""
+        objections = {t: d for t, d in self.confirm_decisions.items() if d["decision"] != "ok"}
+        self.confirm_decisions.clear()
+        if not objections:
+            return
+        final_report = None
+        for tool, d in objections.items():
+            await self._wait_pld_idle()
+            decision, value = d["decision"], d.get("value")
+            if decision == "recheck":
+                cmd = f"重新检查{tool}"
+            elif decision == "exclude":
+                cmd = f"排除{tool}"
+            elif decision == "weight":
+                cmd = f"将{tool}权重调整为{value}"
+            elif decision == "override":
+                self.value_overrides[tool] = str(value)
+                cmd = f"修改报告：将{tool}相关数值修正为{value}"
+            else:
+                continue
+            await self.log("commander", f"下发复盘异议:{cmd}")
+            try:
+                async for event in pld_client.chat_stream(cmd):
+                    p = event.get("payload", {})
+                    if event.get("event_type") == "complete" and p.get("report"):
+                        final_report = p["report"]
+            except Exception as exc:  # noqa: BLE001
+                await self.log("commander", f"异议下发失败({tool}):{exc}")
+        if final_report:
+            self.last_report = final_report
+            await self.broadcast({"type": "report", "content": final_report, "done": True})
+        await self._refresh_snapshot()
 
     def _count_interventions(self, session: dict | None) -> int:
         delta = len((session or {}).get("action_log", [])) - self._action_count_at_start
@@ -345,6 +412,7 @@ class AgentManager:
             "weights": weights,
             "excluded_tools": excluded,
             "summary": summary,
+            "overrides": self.value_overrides,
         })
 
         n = self._count_interventions(session)
@@ -439,6 +507,7 @@ class AgentManager:
                     "weights": session.get("active_weights", {}),
                     "excluded_tools": session.get("excluded_tools", []),
                     "summary": (session.get("latest_summary") or {}),
+                    "overrides": self.value_overrides,
                 })
         except Exception:
             pass
