@@ -20,11 +20,11 @@ const agentColor = (id) => ({
 </script>
 
 <template>
-  <aside class="glass rounded-lg flex flex-col pointer-events-auto h-full">
+  <aside class="glass rounded-lg flex flex-col min-h-0 pointer-events-auto h-full">
     <div class="px-3 py-2 border-b border-cyan-500/20 text-cyan-300 text-xs font-bold tracking-widest">
       ◢ 智能体实时事件流
     </div>
-    <div ref="listEl" class="flex-1 overflow-y-auto px-3 py-2 space-y-1.5 font-mono text-[11px] leading-relaxed">
+    <div ref="listEl" class="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-1.5 font-mono text-[11px] leading-relaxed">
       <div v-if="!logs.length" class="text-slate-500 italic">等待任务下发……</div>
       <div v-for="(l, i) in logs" :key="i" class="flex gap-1.5">
         <span class="text-slate-500 shrink-0">[{{ l.time }}]</span>

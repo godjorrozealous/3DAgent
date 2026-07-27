@@ -276,7 +276,7 @@ export class CommandRoom {
     this.camera = new THREE.PerspectiveCamera(
       55, container.clientWidth / container.clientHeight, 0.1, 500
     )
-    this.camera.position.set(0, 11, 24)
+    this.camera.position.set(0, 13.75, 30)
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.enableDamping = true

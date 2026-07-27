@@ -48,7 +48,7 @@ onMounted(() => {
 
       <div class="flex-1 flex gap-2 min-h-0">
         <!-- 左侧：事件流 + 状态矩阵（可折叠） -->
-        <div v-if="leftOpen" class="w-[280px] shrink-0 flex flex-col gap-2 min-h-0 relative">
+        <div v-if="leftOpen" class="w-[340px] shrink-0 flex flex-col gap-2 min-h-0 relative">
           <button
             @click="leftOpen = false"
             class="absolute -right-1 top-1/2 z-10 w-4 h-10 rounded-r bg-slate-800/80 border border-l-0 border-cyan-500/30 text-cyan-400 text-[10px] pointer-events-auto hover:bg-slate-700"
@@ -86,7 +86,7 @@ onMounted(() => {
           class="self-center w-5 h-16 rounded glass text-cyan-300 text-[10px] pointer-events-auto hover:bg-cyan-500/20 shrink-0"
           style="writing-mode: vertical-rl"
         >◀ 报告</button>
-        <div v-else class="w-[320px] shrink-0 min-h-0 relative">
+        <div v-else class="w-[460px] shrink-0 min-h-0 relative">
           <button
             @click="rightOpen = false"
             class="absolute -left-1 top-1/2 z-10 w-4 h-10 rounded-l bg-slate-800/80 border border-r-0 border-cyan-500/30 text-cyan-400 text-[10px] pointer-events-auto hover:bg-slate-700"
