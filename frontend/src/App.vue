@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { store } from './store'
 import { connect, onEvent } from './ws'
 import { CommandRoom } from './three/CommandRoom'
@@ -27,12 +27,40 @@ const STATUS_CLASS = {
   error: 'text-red-300 border-red-400/60 animate-pulse',
 }
 
+// 策略展示：工具名缩写与中文映射、默认权重基线
+const TOOL_CN = { Lightning: '雷电', Icing: '覆冰', Wind: '风偏', Bird: '鸟害' }
+const DEFAULT_WEIGHTS = { Lightning: 1.0, Icing: 0.9, Wind: 0.8, Bird: 0.6 }
+const shortName = (t) => t.replace('DiagnosisTool', '')
+const cnName = (t) => TOOL_CN[shortName(t)] || shortName(t)
+
+// 非默认权重（与基线不同的项）
+const nonDefaultWeights = computed(() =>
+  Object.entries(store.weights)
+    .filter(([t, w]) => DEFAULT_WEIGHTS[shortName(t)] !== w)
+    .map(([t, w]) => ({ key: t, name: cnName(t), weight: w }))
+)
+
+function buildStrategyText() {
+  return [
+    `策略：${store.defaultSkill || '默认'}`,
+    store.excludedTools.length
+      ? `排除：${store.excludedTools.map(shortName).join('、')}`
+      : '排除：无',
+    nonDefaultWeights.value.length
+      ? `权重：${nonDefaultWeights.value.map((w) => `${w.name}×${w.weight}`).join('、')}`
+      : '权重：默认',
+  ].join('\n')
+}
+
 onMounted(() => {
   const room = new CommandRoom(canvasHost.value, (agentId) => {
     store.chatTarget = agentId
   })
   onEvent((e) => {
     if (e.type === 'agent_status') room.setStatus(e.agent, e.status)
+    if (e.type === 'session_snapshot' || e.type === 'skills') {
+      room.updateStrategy(buildStrategyText())
+    }
   })
   connect()
 })
@@ -46,6 +74,19 @@ onMounted(() => {
     <!-- HUD 覆盖层 -->
     <div class="absolute inset-0 pointer-events-none flex flex-col p-3 gap-2">
       <TopBar />
+
+      <!-- 策略 HUD 信息卡：当前诊断策略 + 排除/权重干预 -->
+      <div class="self-start glass rounded-lg px-3 py-1.5 pointer-events-auto flex items-center gap-1.5 text-[10px] max-w-[70%] overflow-hidden">
+        <span class="text-cyan-300 font-bold whitespace-nowrap">策略：{{ store.defaultSkill || '默认' }}</span>
+        <span
+          v-for="t in store.excludedTools" :key="'x-' + t"
+          class="px-1.5 py-0.5 rounded bg-red-500/15 border border-red-400/40 text-red-300 whitespace-nowrap"
+        >{{ shortName(t) }}</span>
+        <span
+          v-for="w in nonDefaultWeights" :key="'w-' + w.key"
+          class="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-400/40 text-amber-200 whitespace-nowrap"
+        >{{ w.name }} ×{{ w.weight }}</span>
+      </div>
 
       <div class="flex-1 flex gap-2 min-h-0">
         <!-- 左侧：事件流 + 状态矩阵（可折叠） -->

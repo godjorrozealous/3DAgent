@@ -47,6 +47,7 @@ function handle(event) {
       store.weights = event.weights || {}
       store.excludedTools = event.excluded_tools || []
       store.valueOverrides = event.overrides || {}
+      emit(event)
       break
     case 'report_summary':
       store.summaries[event.kind] = event
@@ -66,6 +67,7 @@ function handle(event) {
     case 'skills':
       store.skills = event.skills
       store.defaultSkill = event.default_skill
+      emit(event)
       break
     case 'strategy_saved':
       store.strategies.push(event.strategy)

@@ -48,18 +48,6 @@ import { startDiagnosis, saveStrategy, replay } from '../ws'
       ↻ 复盘重跑
     </button>
 
-    <!-- 当前生效的人工干预 -->
-    <div v-if="Object.keys(store.weights).length || store.excludedTools.length" class="flex items-center gap-1.5 text-[10px] overflow-hidden">
-      <span
-        v-for="(w, t) in store.weights" :key="t"
-        class="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-400/40 text-amber-200 whitespace-nowrap"
-      >{{ t.replace('DiagnosisTool','') }}×{{ w }}</span>
-      <span
-        v-for="t in store.excludedTools" :key="t"
-        class="px-1.5 py-0.5 rounded bg-red-500/15 border border-red-400/40 text-red-300 whitespace-nowrap"
-      >排除 {{ t.replace('DiagnosisTool','') }}</span>
-    </div>
-
     <div class="ml-auto flex items-center gap-2 text-xs shrink-0">
       <span
         class="w-2 h-2 rounded-full"

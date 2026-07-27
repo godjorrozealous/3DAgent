@@ -202,6 +202,35 @@ function makeResearcher({ writing = false } = {}) {
   return g
 }
 
+/* ---------------- 策略浮牌（司令员席位旁） ---------------- */
+
+function drawStrategyBoard(canvas, text) {
+  const ctx = canvas.getContext('2d')
+  const { width: W, height: H } = canvas
+  // 半透明全息底
+  ctx.fillStyle = 'rgba(4,16,29,0.92)'
+  ctx.fillRect(0, 0, W, H)
+  // 边框 + 四角瞄准框
+  ctx.strokeStyle = 'rgba(34,211,238,0.5)'
+  ctx.lineWidth = 3
+  ctx.strokeRect(10, 10, W - 20, H - 20)
+  ctx.strokeStyle = '#22d3ee'
+  ctx.lineWidth = 5
+  for (const [x, y, dx, dy] of [[10, 10, 1, 1], [W - 10, 10, -1, 1], [10, H - 10, 1, -1], [W - 10, H - 10, -1, -1]]) {
+    ctx.beginPath(); ctx.moveTo(x, y + 36 * dy); ctx.lineTo(x, y); ctx.lineTo(x + 36 * dx, y); ctx.stroke()
+  }
+  // 多行文本
+  ctx.font = 'bold 40px "PingFang SC", sans-serif'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  ctx.shadowColor = '#22d3ee'
+  ctx.shadowBlur = 10
+  String(text).split('\n').forEach((line, i) => {
+    ctx.fillStyle = i === 0 ? '#67e8f9' : '#a5f3fc'
+    ctx.fillText(line, 40, 34 + i * 76)
+  })
+}
+
 /* ---------------- 大屏贴图 ---------------- */
 
 function makeScreenTexture() {
@@ -291,6 +320,7 @@ export class CommandRoom {
 
     this._buildLights()
     this._buildRoom()
+    this._buildStrategyBoard()
     this._buildStations()
     this._buildLinks()
     this._bindEvents(container)
@@ -377,6 +407,35 @@ export class CommandRoom {
       new THREE.PointsMaterial({ color: 0x67e8f9, size: 0.08, transparent: true, opacity: 0.5 })
     )
     this.scene.add(this.dust)
+  }
+
+  // 司令员席位旁的策略全息浮牌
+  _buildStrategyBoard() {
+    const canvas = document.createElement('canvas')
+    canvas.width = 640
+    canvas.height = 320
+    this.strategyCanvas = canvas
+    this.strategyTex = new THREE.CanvasTexture(canvas)
+    this.strategyTex.colorSpace = THREE.SRGBColorSpace
+    const board = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.2, 1.6),
+      new THREE.MeshBasicMaterial({ map: this.strategyTex, transparent: true })
+    )
+    board.position.set(3.4, 2.6, -8)
+    this.scene.add(board)
+    // 浮牌下沿灯带
+    const glow = new THREE.Mesh(
+      new THREE.BoxGeometry(3.2, 0.03, 0.03),
+      new THREE.MeshBasicMaterial({ color: 0x22d3ee })
+    )
+    glow.position.set(3.4, 1.78, -8)
+    this.scene.add(glow)
+    this.updateStrategy('策略：默认')
+  }
+
+  updateStrategy(text) {
+    drawStrategyBoard(this.strategyCanvas, text)
+    this.strategyTex.needsUpdate = true
   }
 
   _buildStations() {
