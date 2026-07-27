@@ -49,6 +49,7 @@ class AgentManager:
         self.run_history: list[dict] = []      # 每轮诊断记录（用于复盘对比）
         self.saved_strategies: list[dict] = []
         self.last_report: str = ""
+        self.last_summaries: dict[str, dict] = {}   # "realtime"|"replay" -> report_summary 事件体
 
     # ---------- 连接管理 ----------
     async def connect(self, ws: WebSocket):
@@ -240,6 +241,20 @@ class AgentManager:
         run_record["excluded_tools"] = excluded
         run_record["weights"] = weights
         self.run_history.append(run_record)
+
+        kind = "replay" if replay else "realtime"
+        summary_event = {
+            "type": "report_summary",
+            "kind": kind,
+            "summary": summary,
+            "report": run_record.get("report", ""),
+            "weights": weights,
+            "excluded_tools": excluded,
+            "action_log": (session or {}).get("action_log", []),
+            "time": run_record["time"],
+        }
+        self.last_summaries[kind] = summary_event
+        await self.broadcast(summary_event)
 
         tools_run = set(run_record.get("tools_run", []))
         for aid, tool in TOOL_AGENTS.items():
