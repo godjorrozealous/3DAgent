@@ -34,26 +34,38 @@ const STATUS_CLASS = {
 const TOOL_CN = { Lightning: '雷电', Icing: '覆冰', Wind: '风偏', Bird: '鸟害' }
 const DEFAULT_WEIGHTS = { Lightning: 1.0, Icing: 0.9, Wind: 0.8, Bird: 0.6 }
 const shortName = (t) => t.replace('DiagnosisTool', '')
-const cnName = (t) => TOOL_CN[shortName(t)] || shortName(t)
 
-// 非默认权重（与基线不同的项）
-const nonDefaultWeights = computed(() =>
-  Object.entries(store.weights)
-    .filter(([t, w]) => DEFAULT_WEIGHTS[shortName(t)] !== w)
-    .map(([t, w]) => ({ key: t, name: cnName(t), weight: w }))
-)
-
+const ALL_TOOLS = ['Lightning', 'Wind', 'Icing', 'Bird']
 function buildStrategyText() {
+  const excluded = new Set(store.excludedTools.map(shortName))
+  const planned = new Set((store.plannedTools || []).map(shortName))
+  const calls = ALL_TOOLS.filter(t => !excluded.has(t))
+    .map(t => `${TOOL_CN[t]}×${store.weights[`${t}DiagnosisTool`] ?? DEFAULT_WEIGHTS[t]}`)
+  const excl = [
+    ...[...excluded].map(t => `${TOOL_CN[t] || t}(人工)`),
+    ...ALL_TOOLS.filter(t => planned.size && !planned.has(t) && !excluded.has(t)).map(t => `${TOOL_CN[t]}(条件)`),
+  ]
   return [
     `策略：${store.defaultSkill || '默认'}`,
-    store.excludedTools.length
-      ? `排除：${store.excludedTools.map(shortName).join('、')}`
-      : '排除：无',
-    nonDefaultWeights.value.length
-      ? `权重：${nonDefaultWeights.value.map((w) => `${w.name}×${w.weight}`).join('、')}`
-      : '权重：默认',
+    `调用：${calls.join('、') || '无'}`,
+    `排除：${excl.join('、') || '无'}`,
   ].join('\n')
 }
+
+// HUD 调用标签：非排除工具全列（中文名×权重）
+const callTags = computed(() => {
+  const excluded = new Set(store.excludedTools.map(shortName))
+  return ALL_TOOLS.filter((t) => !excluded.has(t))
+    .map((t) => `${TOOL_CN[t]}×${store.weights[`${t}DiagnosisTool`] ?? DEFAULT_WEIGHTS[t]}`)
+})
+// HUD 排除标签：红=人工排除，灰=条件不满足（LLM 计划外）
+const exclManual = computed(() => store.excludedTools.map(shortName))
+const exclCond = computed(() => {
+  const planned = new Set((store.plannedTools || []).map(shortName))
+  const excluded = new Set(exclManual.value)
+  if (!planned.size) return []
+  return ALL_TOOLS.filter((t) => !planned.has(t) && !excluded.has(t))
+})
 
 onMounted(() => {
   const room = new CommandRoom(canvasHost.value, (agentId) => {
@@ -78,17 +90,29 @@ onMounted(() => {
     <div class="absolute inset-0 pointer-events-none flex flex-col p-3 gap-2">
       <TopBar />
 
-      <!-- 策略 HUD 信息卡：当前诊断策略 + 排除/权重干预 -->
-      <div class="self-start glass rounded-lg px-3 py-1.5 pointer-events-auto flex items-center gap-1.5 text-[10px] max-w-[70%] overflow-hidden">
-        <span class="text-cyan-300 font-bold whitespace-nowrap">策略：{{ store.defaultSkill || '默认' }}</span>
-        <span
-          v-for="t in store.excludedTools" :key="'x-' + t"
-          class="px-1.5 py-0.5 rounded bg-red-500/15 border border-red-400/40 text-red-300 whitespace-nowrap"
-        >{{ shortName(t) }}</span>
-        <span
-          v-for="w in nonDefaultWeights" :key="'w-' + w.key"
-          class="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-400/40 text-amber-200 whitespace-nowrap"
-        >{{ w.name }} ×{{ w.weight }}</span>
+      <!-- 策略 HUD 信息卡：第一行=策略名+调用标签，第二行=排除标签（红=人工 / 灰=条件） -->
+      <div class="self-start glass rounded-lg px-3 py-1.5 pointer-events-auto flex flex-col gap-1 text-[10px] max-w-[70%] overflow-hidden">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <span class="text-cyan-300 font-bold whitespace-nowrap">策略：{{ store.defaultSkill || '默认' }}</span>
+          <span
+            v-for="t in callTags" :key="'c-' + t"
+            class="px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-400/40 text-cyan-200 whitespace-nowrap"
+          >{{ t }}</span>
+        </div>
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <span class="text-slate-400 font-bold whitespace-nowrap">排除：</span>
+          <template v-if="exclManual.length || exclCond.length">
+            <span
+              v-for="t in exclManual" :key="'x-' + t"
+              class="px-1.5 py-0.5 rounded bg-red-500/15 border border-red-400/40 text-red-300 whitespace-nowrap"
+            >{{ TOOL_CN[t] || t }}(人工)</span>
+            <span
+              v-for="t in exclCond" :key="'k-' + t"
+              class="px-1.5 py-0.5 rounded bg-slate-500/15 border border-slate-400/40 text-slate-400 whitespace-nowrap"
+            >{{ TOOL_CN[t] || t }}(条件)</span>
+          </template>
+          <span v-else class="text-slate-500 whitespace-nowrap">无</span>
+        </div>
       </div>
 
       <div class="flex-1 flex gap-2 min-h-0">

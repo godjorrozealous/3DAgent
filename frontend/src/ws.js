@@ -46,6 +46,7 @@ function handle(event) {
       store.sessionId = event.session_id
       store.weights = event.weights || {}
       store.excludedTools = event.excluded_tools || []
+      store.plannedTools = event.planned_tools || []
       store.valueOverrides = event.overrides || {}
       emit(event)
       break

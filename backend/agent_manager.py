@@ -564,6 +564,7 @@ class AgentManager:
             "excluded_tools": excluded,
             "summary": summary,
             "overrides": self.value_overrides,
+            "planned_tools": self.planned_tools,
         })
 
         n = self._count_interventions(session)
@@ -658,6 +659,7 @@ class AgentManager:
                     "excluded_tools": session.get("excluded_tools", []),
                     "summary": (session.get("latest_summary") or {}),
                     "overrides": self.value_overrides,
+                    "planned_tools": self.planned_tools,
                 })
         except Exception:
             pass
