@@ -56,6 +56,8 @@ TOOL_TO_AGENT = {v: k for k, v in TOOL_AGENTS.items()}
 
 DIAGNOSE_MESSAGE = "雅湖线 2025-05-08 19:46 发生跳闸，请进行故障综合诊断"
 
+SESSION_CONTEXT = "【当前会话：雅湖线 2025-05-08 19:46 跳闸诊断｜{tool}】"
+
 
 def parse_planned_tools(text: str) -> list[str]:
     """从「诊断计划」文本提取计划调用的工具名（去重保序）。"""
@@ -353,6 +355,7 @@ class AgentManager:
                                 "agent": aid, "tool": tool,
                                 "fault_type": fault, "confidence": conf,
                                 "evidence": evid,
+                                "raw_text": raw, "structured_data": sd,
                                 "override": self.value_overrides.get(tool),
                             }
                             await self.broadcast(self.pending_confirms[tool])
@@ -626,24 +629,23 @@ class AgentManager:
                 return
             await self.set_status("commander", "completed")
         else:
-            # 子席位：基于最近一次诊断上下文作答
-            await asyncio.sleep(0.6)
-            tool = TOOL_AGENTS[agent]
-            session = None
+            tool = TOOL_AGENTS.get(agent, agent)
+            prefixed = SESSION_CONTEXT.format(tool=tool) + message
+            await self.log(agent, f"收到针对 {tool} 的会话内要求，转发 PLDiagnosis 处理。")
             try:
-                if self.session_id:
-                    session = await pld_client.get_session(self.session_id)
-            except Exception:
-                pass
-            excluded = (session or {}).get("excluded_tools", [])
-            weights = (session or {}).get("active_weights", {})
-            state = "已被人工排除" if tool in excluded else "在诊"
-            w = weights.get(tool, "默认")
-            await self.chat_say(
-                agent,
-                f"{AGENTS[agent]['name']}在线（{state}，权重 {w}）。我通过 {tool} 从接口平台采集数据。"
-                "如需调整我的参与方式，请向司令员下达指令，例如「排除鸟害工具」「将雷电工具权重调整为 1.5」。",
-            )
+                async for event in pld_client.chat_stream(prefixed):
+                    etype = event.get("event_type")
+                    payload = event.get("payload", {})
+                    if etype == "complete":
+                        if payload.get("report"):
+                            self.last_report = payload["report"]
+                            await self.broadcast({"type": "report", "content": payload["report"], "done": True})
+                        await self.chat_say(agent, payload.get("message") or "要求已处理，报告已同步更新。")
+                        await self._refresh_snapshot()
+                    elif etype == "error":
+                        await self.chat_say(agent, f"处理失败:{payload.get('message', '未知错误')}")
+            except Exception as exc:  # noqa: BLE001
+                await self.chat_say(agent, f"要求下发失败:{exc}")
 
     async def _refresh_snapshot(self):
         try:
