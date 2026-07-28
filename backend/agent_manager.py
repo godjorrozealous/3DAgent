@@ -339,6 +339,12 @@ class AgentManager:
         except Exception as exc:  # noqa: BLE001
             await self.log("commander", f"诊断流程异常：{exc}")
             await self.set_status("commander", "error")
+            if replay:
+                # 复盘中途异常：清空待确认队列与决策，通知前端复位确认/审核状态
+                self.pending_confirms.clear()
+                self.confirm_decisions.clear()
+                await self.broadcast({"type": "confirm_queue_clear"})
+                await self.log("commander", "【复盘】流程异常终止，确认队列已清空，状态已复位。")
             for aid in TOOL_AGENTS:
                 if self.status[aid] == "running":
                     await self.set_status(aid, "idle")

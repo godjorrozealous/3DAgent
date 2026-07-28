@@ -7,6 +7,7 @@ const input = ref('')
 const listEl = ref(null)
 const fileInput = ref(null)
 const uploading = ref(false)
+const uploadError = ref('')
 
 const agent = computed(() => (store.chatTarget ? store.agents[store.chatTarget] : null))
 const messages = computed(() => store.chatMessages[store.chatTarget] || [])
@@ -41,10 +42,16 @@ async function onUpload(e) {
   const file = e.target.files && e.target.files[0]
   if (!file) return
   uploading.value = true
+  uploadError.value = ''
   try {
     const fd = new FormData()
     fd.append('file', file)
-    await fetch('/api/templates/upload', { method: 'POST', body: fd })
+    const resp = await fetch('/api/templates/upload', { method: 'POST', body: fd })
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null)
+      uploadError.value = body?.error || body?.detail || resp.statusText || '上传失败'
+      return
+    }
     listTemplates()
   } finally {
     uploading.value = false
@@ -97,6 +104,7 @@ async function onUpload(e) {
         >{{ uploading ? '上传中…' : '+ 上传模板' }}</button>
         <input ref="fileInput" type="file" accept=".md,.docx,.pdf" class="hidden" @change="onUpload" />
       </div>
+      <div v-if="uploadError" class="text-red-300 text-[10px] mb-1.5">上传失败：{{ uploadError }}</div>
       <div class="max-h-24 overflow-y-auto space-y-1 text-[11px]">
         <div v-if="!store.templates.length" class="text-slate-500 italic">暂无模板，可上传 .md/.docx/.pdf 文件</div>
         <div

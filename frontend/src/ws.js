@@ -61,6 +61,10 @@ function handle(event) {
     case 'report_review_request':
       store.reportReviewPending = true
       break
+    case 'confirm_queue_clear':
+      store.confirmQueue.length = 0
+      store.reportReviewPending = false
+      break
     case 'templates':
       store.templates = event.templates
       break

@@ -101,6 +101,39 @@ async def test_realtime_no_confirm(monkeypatch):
     assert not [e for e in ws.events if e["type"] == "tool_confirm_request"]
 
 
+async def test_replay_error_clears_confirm_queue(monkeypatch):
+    sent = []
+
+    async def failing_stream(msg):
+        sent.append(msg)
+        yield {"event_type": "start", "payload": {}, "session_id": "s1"}
+        # 先广播一个工具结果（复盘模式下会进入 pending_confirms）
+        yield {"event_type": "result", "payload": {
+            "tool": "LightningDiagnosisTool",
+            "output": {"structured_data": {"fault_type": "雷击-绕击", "confidence": 0.985,
+                                           "evidence": ["证据A"]}, "raw_text": "raw"}},
+         "session_id": "s1"}
+        # 随后 PLD 报错
+        yield {"event_type": "error", "payload": {"message": "PLD 崩溃"}, "session_id": "s1"}
+
+    async def fake_session(sid):
+        return SESSION
+
+    monkeypatch.setattr(agent_manager.pld_client, "chat_stream", failing_stream)
+    monkeypatch.setattr(agent_manager.pld_client, "get_session", fake_session)
+    mgr = agent_manager.AgentManager()
+    mgr.session_id = "s1"
+    ws = FakeWS()
+    await mgr.connect(ws)
+
+    await mgr.run_diagnosis(replay=True)
+    assert mgr.pending_confirms == {}
+    assert mgr.confirm_decisions == {}
+    assert any(e["type"] == "confirm_queue_clear" for e in ws.events)
+    # 确认请求曾广播过，随后被清空事件覆盖
+    assert any(e["type"] == "tool_confirm_request" for e in ws.events)
+
+
 async def test_report_review_loop(monkeypatch):
     sent = []
     mgr = make_mgr(monkeypatch, sent)
