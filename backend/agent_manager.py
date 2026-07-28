@@ -232,6 +232,8 @@ class AgentManager:
 
     async def run_diagnosis(self, replay: bool = False):
         await self.broadcast({"type": "report", "content": "", "done": False, "reset": True})
+        # 每轮开跑重置本轮计划，防止上一轮「诊断计划」残留被误用
+        self.planned_tools = []
         report_buf = ""
         run_record: dict = {"replay": replay, "time": datetime.datetime.now().strftime("%H:%M:%S")}
         try:
