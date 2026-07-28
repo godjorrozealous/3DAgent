@@ -1,6 +1,5 @@
-import asyncio
 import agent_manager
-from tests.test_agent_manager import FakeWS, make_manager
+from tests.test_agent_manager import FakeWS
 
 
 def test_parse_planned_tools():
@@ -15,6 +14,7 @@ def test_parse_planned_tools():
 async def test_skipped_agents_blink_and_planned_run(monkeypatch):
     stream = [
         {"event_type": "start", "payload": {}, "session_id": "s1"},
+        {"event_type": "thinking", "payload": {"message": "诊断计划: 调用 LightningDiagnosisTool, WindDiagnosisTool"}, "session_id": "s1"},
         {"event_type": "thinking", "payload": {"message": "执行诊断工具..."}, "session_id": "s1"},
         {"event_type": "complete", "payload": {"report": "r", "summary": {}}, "session_id": "s1"},
     ]
@@ -27,15 +27,22 @@ async def test_skipped_agents_blink_and_planned_run(monkeypatch):
     monkeypatch.setattr(agent_manager.pld_client, "chat_stream", fake_stream)
     monkeypatch.setattr(agent_manager.pld_client, "get_session", fake_session)
     mgr = agent_manager.AgentManager()
-    mgr.planned_tools = ["LightningDiagnosisTool", "WindDiagnosisTool"]
     ws = FakeWS()
     await mgr.connect(ws)
     await mgr.run_diagnosis(replay=False)
+    # 计划经事件流注入(与生产一致),而非直接预设 planned_tools
+    assert mgr.planned_tools == ["LightningDiagnosisTool", "WindDiagnosisTool"]
     # 计划内:running;计划外(icing/bird):先 running 后 idle(亮一下就灭)
     lightning_states = [e["status"] for e in ws.events if e.get("type") == "agent_status" and e.get("agent") == "lightning"]
     icing_states = [e["status"] for e in ws.events if e.get("type") == "agent_status" and e.get("agent") == "icing"]
     assert "running" in lightning_states
     assert icing_states[:2] == ["running", "idle"]
+    # 证明 icing 走的是 blink 分支:存在「本轮未调用该工具」日志
+    blink_logs = [
+        e for e in ws.events
+        if e.get("type") == "log" and e.get("agent") == "icing" and "本轮未调用该工具" in e.get("message", "")
+    ]
+    assert blink_logs
 
 
 async def test_planned_tools_reset_between_runs(monkeypatch):
