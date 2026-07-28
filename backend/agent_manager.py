@@ -14,11 +14,27 @@
 """
 import asyncio
 import datetime
+import json
 import re
+from pathlib import Path
 
 from fastapi import WebSocket
 
 import pld_client
+
+TRAILS_FILE = Path(__file__).parent / "data" / "strategy_trails.json"
+
+
+def _load_trails() -> dict:
+    try:
+        return json.loads(TRAILS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _write_trails(trails: dict):
+    TRAILS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    TRAILS_FILE.write_text(json.dumps(trails, ensure_ascii=False, indent=1), encoding="utf-8")
 
 AGENTS = {
     "commander": {"name": "司令员智能体", "role": "主智能体 / 意图解析·规划·汇总签发"},
@@ -125,7 +141,7 @@ class AgentManager:
         elif mtype == "replay":
             await self._start_run(replay=True)
         elif mtype == "save_strategy":
-            await self.save_strategy()
+            await self.save_strategy(str(data.get("name", "")))
         elif mtype == "chat":
             agent = data.get("agent", "commander")
             message = str(data.get("message", "")).strip()
@@ -159,7 +175,7 @@ class AgentManager:
             await self._refresh_snapshot()
         elif mtype == "save_prompt_response":
             if data.get("save"):
-                await self.save_strategy()
+                await self.save_strategy(str(data.get("name", "")))
         elif mtype == "tool_confirm_response":
             tool = str(data.get("tool", ""))
             if tool in self.pending_confirms:
@@ -618,7 +634,7 @@ class AgentManager:
             pass
 
     # ---------- 策略保存 ----------
-    async def save_strategy(self):
+    async def save_strategy(self, name: str = ""):
         try:
             session = await pld_client.get_session(self.session_id) if self.session_id else None
         except Exception as exc:  # noqa: BLE001
@@ -630,7 +646,18 @@ class AgentManager:
 
         weights = session.get("active_weights", {})
         excluded = session.get("excluded_tools", [])
-        name = f"cmd_strategy_{datetime.datetime.now().strftime('%H%M%S')}"
+        name = name.strip() or f"cmd_strategy_{datetime.datetime.now().strftime('%H%M%S')}"
+        # 重名去重：对内存中已存策略名 + trails 文件键，冲突追加 _2/_3…
+        existing = {s.get("name") for s in self.saved_strategies} | set(_load_trails().keys())
+        unique = name
+        i = 2
+        while unique in existing:
+            unique = f"{name}_{i}"
+            i += 1
+        if unique != name:
+            await self.log("commander", f"策略名「{name}」已存在，重命名为「{unique}」。")
+        name = unique
+
         lines = [f"# 指挥室人工干预策略 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ""]
         lines.append("## 工具权重")
         for t, w in (weights or {}).items():
@@ -647,11 +674,15 @@ class AgentManager:
             "time": datetime.datetime.now().strftime("%H:%M:%S"),
             "weights": weights,
             "excluded_tools": excluded,
+            "trail_count": len(self.intervention_trail),
             "saved_to_pld": bool(result.get("success")),
         }
         self.saved_strategies.append(strategy)
+        trails = _load_trails()
+        trails[name] = list(self.intervention_trail)
+        _write_trails(trails)
         await self.broadcast({"type": "strategy_saved", "strategy": strategy})
         await self.log(
             "commander",
-            f"人工干预策略已保存为技能「{name}」（权重 {len(weights or {})} 项 / 排除 {len(excluded or [])} 项），可点击「复盘重跑」验证生效。",
+            f"人工干预策略已保存为技能「{name}」（权重 {len(weights or {})} 项 / 排除 {len(excluded or [])} 项 / 干预线索 {len(self.intervention_trail)} 条），可点击「复盘重跑」验证生效。",
         )
