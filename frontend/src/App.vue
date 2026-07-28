@@ -10,7 +10,7 @@ import ChatModal from './components/ChatModal.vue'
 import ReportModal from './components/ReportModal.vue'
 import CompareModal from './components/CompareModal.vue'
 import SavePromptModal from './components/SavePromptModal.vue'
-import ConfirmToolModal from './components/ConfirmToolModal.vue'
+import AgentSessionModal from './components/AgentSessionModal.vue'
 import ReportReviewModal from './components/ReportReviewModal.vue'
 
 const canvasHost = ref(null)
@@ -67,9 +67,24 @@ const exclCond = computed(() => {
   return ALL_TOOLS.filter((t) => !planned.has(t) && !excluded.has(t))
 })
 
+// 诊断席位 -> PLD 工具名（复盘中双击席位打开 AgentSessionModal 私聊）
+const TOOL_AGENTS = {
+  lightning: 'LightningDiagnosisTool',
+  wind: 'WindDiagnosisTool',
+  icing: 'IcingDiagnosisTool',
+  bird: 'BirdDamageDiagnosisTool',
+}
+function onAgentDblClick(agentId) {
+  if (store.replayMode && TOOL_AGENTS[agentId]) {
+    store.agentSession = { agent: agentId, tool: TOOL_AGENTS[agentId], confirm: false }
+  } else {
+    store.chatTarget = agentId
+  }
+}
+
 onMounted(() => {
   const room = new CommandRoom(canvasHost.value, (agentId) => {
-    store.chatTarget = agentId
+    onAgentDblClick(agentId)
   })
   onEvent((e) => {
     if (e.type === 'agent_status') room.setStatus(e.agent, e.status)
@@ -130,7 +145,7 @@ onMounted(() => {
                 v-for="a in store.agents" :key="a.id"
                 class="flex items-center justify-between border rounded px-2 py-1 text-[10px] cursor-pointer hover:bg-cyan-500/10"
                 :class="STATUS_CLASS[a.status] || STATUS_CLASS.idle"
-                @dblclick="store.chatTarget = a.id"
+                @dblclick="onAgentDblClick(a.id)"
               >
                 <span>{{ a.name.replace('智能体', '') }}</span>
                 <span>{{ STATUS_HINT[a.status] || '待机' }}</span>
@@ -173,8 +188,8 @@ onMounted(() => {
     <CompareModal />
     <!-- 策略保存提醒弹窗 -->
     <SavePromptModal />
-    <!-- 工具结论确认弹窗 -->
-    <ConfirmToolModal />
+    <!-- 复盘合并大弹窗：子报告结果 + 私聊 + 快捷异议 -->
+    <AgentSessionModal />
     <!-- 复盘报告审核弹窗 -->
     <ReportReviewModal />
   </div>

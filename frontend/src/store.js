@@ -26,6 +26,8 @@ export const store = reactive({
   skills: [],
   defaultSkill: '',
   confirmQueue: [],      // tool_confirm_request 队列，响应后 shift
+  agentSession: null,    // null | { agent, tool, fault_type, confidence, evidence, raw_text, structured_data, override, confirm: bool }
+  replayMode: false,     // run_state.mode === 'replay'
   savePrompt: null,      // null | { interventions, context }
   reportReviewPending: false,
   reportModal: null,     // null | { title, content }
@@ -42,3 +44,6 @@ export function pushChat(agentId, msg) {
   if (!store.chatMessages[agentId]) store.chatMessages[agentId] = []
   store.chatMessages[agentId].push(msg)
 }
+
+// 开发调试便利：允许在浏览器控制台/自动化中直接驱动 store
+window.__store = store

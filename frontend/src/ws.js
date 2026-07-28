@@ -58,6 +58,8 @@ function handle(event) {
       break
     case 'tool_confirm_request':
       store.confirmQueue.push(event)
+      // 不抢占已打开的会话弹窗（确认或私聊），提交后由弹窗按队列推进
+      if (!store.agentSession) store.agentSession = { ...event, confirm: true }
       break
     case 'report_review_request':
       store.reportReviewPending = true
@@ -65,6 +67,11 @@ function handle(event) {
     case 'confirm_queue_clear':
       store.confirmQueue.length = 0
       store.reportReviewPending = false
+      store.agentSession = null
+      break
+    case 'run_state':
+      store.replayMode = event.mode === 'replay'
+      store.running = event.mode !== null
       break
     case 'templates':
       store.templates = event.templates
