@@ -324,6 +324,7 @@ class AgentManager:
                         parsed = parse_planned_tools(msg)
                         if parsed:
                             self.planned_tools = parsed
+                            await self._refresh_snapshot()
                     if not tools_started and "执行诊断工具" in msg:
                         tools_started = True
                         await self._mark_tools_running()
