@@ -167,6 +167,7 @@ class AgentManager:
             self.local_interventions += 1
             await self.log("commander", f"诊断策略已切换为「{name}」（全局默认）。")
             await self.send_skills()
+            await self._replay_trail(name)
         elif mtype == "reset_skills":
             await pld_client.reset_skills()
             self.local_interventions += 1
@@ -206,6 +207,32 @@ class AgentManager:
             await self.broadcast({"type": "skills", "skills": skills, "default_skill": default})
         except Exception as exc:  # noqa: BLE001
             await self.log("commander", f"策略列表获取失败:{exc}")
+
+    async def _replay_trail(self, name: str):
+        trail = _load_trails().get(name, [])
+        if not trail:
+            return
+        await self.log("commander", f"策略「{name}」含 {len(trail)} 条干预线索，开始自动重放……")
+        for item in trail:
+            kind, tool, value, text = item.get("kind"), item.get("tool", ""), item.get("value"), item.get("text", "")
+            if kind in ("override", "time_range", "external_data"):
+                self.value_overrides[tool] = str(value)
+                cmd = f"修改报告：将{tool}相关数值修正为{value}"
+            elif kind == "report_modify":
+                cmd = text
+            else:
+                continue  # exclude/weight/recheck 由 PLD 技能承载或属一次性动作
+            try:
+                await self._wait_pld_idle()
+                async for event in pld_client.chat_stream(cmd):
+                    p = event.get("payload", {})
+                    if event.get("event_type") == "complete" and p.get("report"):
+                        self.last_report = p["report"]
+                        await self.broadcast({"type": "report", "content": p["report"], "done": True})
+            except Exception as exc:  # noqa: BLE001
+                await self.log("commander", f"线索重放失败({kind} {tool}):{exc}")
+        await self._refresh_snapshot()
+        await self.log("commander", f"策略「{name}」干预线索重放完成。")
 
     async def activate_template(self, name: str):
         if not name:
