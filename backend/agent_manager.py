@@ -70,6 +70,7 @@ class AgentManager:
         self._review_response: dict = {}
         self._chat_tasks: set[asyncio.Task] = set()
         self.planned_tools: list[str] = []
+        self._run_replay: bool = False
 
     # ---------- 连接管理 ----------
     async def connect(self, ws: WebSocket):
@@ -129,6 +130,9 @@ class AgentManager:
             agent = data.get("agent", "commander")
             message = str(data.get("message", "")).strip()
             if agent in AGENTS and message:
+                if self.current_task and not self.current_task.done() and not self._run_replay:
+                    await self.chat_say(agent, "实时诊断执行中不接受干预，请在复盘重跑中进行。")
+                    return
                 task = asyncio.create_task(self.handle_chat(agent, message))
                 self._chat_tasks.add(task)
                 task.add_done_callback(self._chat_tasks.discard)
@@ -239,6 +243,9 @@ class AgentManager:
         report_buf = ""
         run_record: dict = {"replay": replay, "time": datetime.datetime.now().strftime("%H:%M:%S")}
         try:
+            self._run_replay = replay
+            self.current_task = asyncio.current_task()
+            await self.broadcast({"type": "run_state", "mode": "replay" if replay else "realtime"})
             await self.set_status("commander", "running")
             # 等待进行中的 chat 干预任务完成，避免其触发的自动重诊断与本次诊断冲突
             if self._chat_tasks:
@@ -369,6 +376,9 @@ class AgentManager:
                     await self.set_status(aid, "idle")
             if self.status["audit"] == "running":
                 await self.set_status("audit", "idle")
+        finally:
+            self._run_replay = False
+            await self.broadcast({"type": "run_state", "mode": None})
 
     def _trail(self, kind: str, tool: str = "", value=None, text: str = ""):
         self.intervention_trail.append({
