@@ -61,6 +61,7 @@ class AgentManager:
         self.last_summaries: dict[str, dict] = {}   # "realtime"|"replay" -> report_summary 事件体
         self.local_interventions: int = 0        # 模板/策略类操作（PLD action_log 之外的干预）
         self._action_count_at_start: int = 0     # 本轮开始时 PLD action_log 长度
+        self.intervention_trail: list[dict] = []  # 本轮干预线索收集
         self.pending_confirms: dict[str, dict] = {}   # tool -> 待确认的 tool_confirm_request 体
         self.confirm_decisions: dict[str, dict] = {}  # tool -> {decision, value?}
         self.value_overrides: dict[str, str] = {}     # tool -> 改后数值文本（随 snapshot 下发）
@@ -232,6 +233,7 @@ class AgentManager:
 
     async def run_diagnosis(self, replay: bool = False):
         await self.broadcast({"type": "report", "content": "", "done": False, "reset": True})
+        self.intervention_trail = []
         # 每轮开跑重置本轮计划，防止上一轮「诊断计划」残留被误用
         self.planned_tools = []
         report_buf = ""
@@ -342,6 +344,7 @@ class AgentManager:
                             if not instruction:
                                 break
                             await self.log("audit", f"按指挥员意见修改报告:{instruction}")
+                            self._trail("report_modify", text=instruction)
                             await self._wait_pld_idle()
                             async for ev in pld_client.chat_stream(instruction):
                                 p = ev.get("payload", {})
@@ -367,6 +370,12 @@ class AgentManager:
             if self.status["audit"] == "running":
                 await self.set_status("audit", "idle")
 
+    def _trail(self, kind: str, tool: str = "", value=None, text: str = ""):
+        self.intervention_trail.append({
+            "kind": kind, "tool": tool, "value": value, "text": text,
+            "time": datetime.datetime.now().strftime("%H:%M:%S"),
+        })
+
     async def _dispatch_objections(self):
         """复盘确认后的异议处理：逐条下发 PLD（recheck/exclude/adjust_weight/手动改值）。"""
         objections = {t: d for t, d in self.confirm_decisions.items() if d["decision"] != "ok"}
@@ -378,14 +387,21 @@ class AgentManager:
             await self._wait_pld_idle()
             decision, value = d["decision"], d.get("value")
             if decision == "recheck":
+                self._trail("recheck", tool)
                 cmd = f"重新检查{tool}"
             elif decision == "exclude":
+                self._trail("exclude", tool)
                 cmd = f"排除{tool}"
             elif decision == "weight":
+                self._trail("weight", tool, value)
                 cmd = f"将{tool}权重调整为{value}"
             elif decision == "override":
+                self._trail("override", tool, value)
                 self.value_overrides[tool] = str(value)
                 cmd = f"修改报告：将{tool}相关数值修正为{value}"
+            elif decision == "time_range":
+                self._trail("time_range", tool, value)
+                cmd = f"重新检查{tool}，查询时间段{value}"
             else:
                 continue
             await self.log("commander", f"下发复盘异议:{cmd}")
@@ -461,7 +477,7 @@ class AgentManager:
             "report": run_record.get("report", ""),
             "weights": weights,
             "excluded_tools": excluded,
-            "action_log": (session or {}).get("action_log", []),
+            "action_log": (session or {}).get("action_log", [])[self._action_count_at_start:],
             "time": run_record["time"],
         }
         self.last_summaries[kind] = summary_event
