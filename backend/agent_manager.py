@@ -14,6 +14,7 @@
 """
 import asyncio
 import datetime
+import re
 
 from fastapi import WebSocket
 
@@ -40,6 +41,14 @@ TOOL_TO_AGENT = {v: k for k, v in TOOL_AGENTS.items()}
 DIAGNOSE_MESSAGE = "雅湖线 2025-05-08 19:46 发生跳闸，请进行故障综合诊断"
 
 
+def parse_planned_tools(text: str) -> list[str]:
+    """从「诊断计划」文本提取计划调用的工具名（去重保序）。"""
+    seen: dict[str, None] = {}
+    for m in re.findall(r"\w+DiagnosisTool", text or ""):
+        seen.setdefault(m)
+    return [t for t in seen if t in TOOL_TO_AGENT]
+
+
 class AgentManager:
     def __init__(self):
         self.status = {aid: "idle" for aid in AGENTS}
@@ -59,6 +68,7 @@ class AgentManager:
         self._review_event: asyncio.Event | None = None
         self._review_response: dict = {}
         self._chat_tasks: set[asyncio.Task] = set()
+        self.planned_tools: list[str] = []
 
     # ---------- 连接管理 ----------
     async def connect(self, ws: WebSocket):
@@ -254,6 +264,10 @@ class AgentManager:
                     # 过滤 LLM 流式 JSON 片段（累积文本），只保留阶段性进度消息
                     if msg and not msg.startswith(("{", '"')):
                         await self.log("commander", msg)
+                    if "诊断计划" in msg:
+                        parsed = parse_planned_tools(msg)
+                        if parsed:
+                            self.planned_tools = parsed
                     if not tools_started and "执行诊断工具" in msg:
                         tools_started = True
                         await self._mark_tools_running()
@@ -390,13 +404,37 @@ class AgentManager:
         return max(delta, 0) + self.local_interventions
 
     async def _mark_tools_running(self):
-        """工具执行阶段：四个诊断席位并行进入 RUNNING（视觉错峰）。"""
-        async def stagger(aid: str, delay: float):
+        """工具执行阶段：计划内席位进入 RUNNING；计划外「亮一下就灭」。"""
+        planned = set(self.planned_tools)
+        if not planned:
+            planned = set(TOOL_AGENTS.values())
+        excluded = set()
+        try:
+            if self.session_id:
+                session = await pld_client.get_session(self.session_id)
+                excluded = set((session or {}).get("excluded_tools", []))
+        except Exception:
+            pass
+
+        async def run_agent(aid: str, delay: float):
             await asyncio.sleep(delay)
             await self.set_status(aid, "running")
             await self.log(aid, f"通过 MCP 服务调用 {TOOL_AGENTS[aid]} 采集诊断数据……")
 
-        await asyncio.gather(*[stagger(aid, i * 1.2) for i, aid in enumerate(TOOL_AGENTS)])
+        async def blink_agent(aid: str, delay: float):
+            await asyncio.sleep(delay)
+            await self.set_status(aid, "running")
+            await asyncio.sleep(0.6)
+            await self.set_status(aid, "idle")
+            await self.log(aid, "按 LLM 诊断策略，本轮未调用该工具（条件不满足）。")
+
+        tasks = []
+        for i, (aid, tool) in enumerate(TOOL_AGENTS.items()):
+            if tool in planned and tool not in excluded:
+                tasks.append(run_agent(aid, i * 1.2))
+            else:
+                tasks.append(blink_agent(aid, i * 0.3))
+        await asyncio.gather(*tasks)
 
     async def _finish_run(self, run_record: dict, summary: dict, replay: bool):
         # 拉取会话快照：权重 / 排除列表（人工干预的真实状态）
