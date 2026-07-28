@@ -647,6 +647,8 @@ class AgentManager:
         weights = session.get("active_weights", {})
         excluded = session.get("excluded_tools", [])
         name = name.strip() or f"cmd_strategy_{datetime.datetime.now().strftime('%H%M%S')}"
+        # 安全 slug：连续空白转单个下划线（中文字符保留）
+        name = re.sub(r"\s+", "_", name)
         # 重名去重：对内存中已存策略名 + trails 文件键，冲突追加 _2/_3…
         existing = {s.get("name") for s in self.saved_strategies} | set(_load_trails().keys())
         unique = name
