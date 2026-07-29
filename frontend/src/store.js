@@ -46,4 +46,4 @@ export function pushChat(agentId, msg) {
 }
 
 // 开发调试便利：允许在浏览器控制台/自动化中直接驱动 store
-window.__store = store
+if (import.meta.env.DEV) window.__store = store

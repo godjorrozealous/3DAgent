@@ -102,12 +102,26 @@ function submit(decision) {
     value = overrideValue.value.trim()
   }
   sendToolConfirm(s.tool, decision, value)
+  // spec §6：快捷按钮在对话区生成对应指令消息（sendChat 已回显用户气泡，无双气泡）
+  const a = agent.value
+  if (a) {
+    const text =
+      decision === 'recheck' ? '请重新检查'
+      : decision === 'time_range' ? `请重新检查，查询时间段 ${value}`
+      : decision === 'exclude' ? '该数据不对，去掉'
+      : decision === 'weight' ? `调整权重为 ${value}`
+      : decision === 'override' ? `手填数据：${value}`
+      : '无异议'
+    sendChat(a, text)
+  }
   advance()
 }
 
 function close() {
   if (isConfirm.value) return
   store.agentSession = null
+  // 私聊关闭后提升确认队列队首，避免排队确认饿死
+  if (store.confirmQueue.length) store.agentSession = { ...store.confirmQueue[0], confirm: true }
 }
 </script>
 
