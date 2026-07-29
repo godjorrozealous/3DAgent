@@ -29,6 +29,7 @@ export const store = reactive({
   agentSession: null,    // null | { agent, tool, fault_type, confidence, evidence, raw_text, structured_data, override, confirm: bool }
   replayMode: false,     // run_state.mode === 'replay'
   savePrompt: null,      // null | { interventions, context }
+  saveNaming: null,      // null | { suggested: string } 命名保存弹窗
   reportReviewPending: false,
   reportModal: null,     // null | { title, content }
   compareOpen: false,

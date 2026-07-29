@@ -110,8 +110,16 @@ export function startDiagnosis() {
   send({ type: 'start_diagnosis', ...LINES[store.selectedLine] })
 }
 
-export function saveStrategy() {
-  send({ type: 'save_strategy' })
+// 命名保存：本地时间 策略_YYYYMMDD_HHmm（pad 补零，非 UTC）
+export function openSaveNaming() {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  const suggested = `策略_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`
+  store.saveNaming = { suggested }
+}
+
+export function saveStrategyNamed(name) {
+  send({ type: 'save_strategy', name })
 }
 
 export function replay() {
@@ -138,5 +146,5 @@ export const sendToolConfirm = (tool, decision, value) =>
   send({ type: 'tool_confirm_response', tool, decision, value })
 export const sendReportReview = (satisfied, instruction) =>
   send({ type: 'report_review_response', satisfied, instruction })
-export const respondSavePrompt = (save) =>
-  send({ type: 'save_prompt_response', save })
+export const respondSavePrompt = (save, name) =>
+  send({ type: 'save_prompt_response', save, name })

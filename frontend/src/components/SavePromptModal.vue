@@ -1,9 +1,13 @@
 <script setup>
 import { store } from '../store'
-import { respondSavePrompt } from '../ws'
+import { respondSavePrompt, openSaveNaming } from '../ws'
 
+// 注意：后端 save_prompt_response(save=true) 也会执行保存，
+// 因此这里先用 save=false 消解提示（不保存），命名交由命名弹窗统一发送 save_strategy，
+// 保证只保存一次；后端 prompt_save_strategy 为广播、不阻塞等待响应，不会悬挂。
 function save() {
-  respondSavePrompt(true)
+  respondSavePrompt(false)
+  openSaveNaming()
   store.savePrompt = null
 }
 

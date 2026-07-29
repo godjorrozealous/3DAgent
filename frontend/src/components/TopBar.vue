@@ -1,6 +1,6 @@
 <script setup>
 import { store, LINES } from '../store'
-import { startDiagnosis, saveStrategy, replay } from '../ws'
+import { startDiagnosis, openSaveNaming, replay } from '../ws'
 </script>
 
 <template>
@@ -32,7 +32,7 @@ import { startDiagnosis, saveStrategy, replay } from '../ws'
 
     <button
       :disabled="store.running || !store.connected || !store.sessionId"
-      @click="saveStrategy"
+      @click="openSaveNaming"
       class="text-xs font-bold px-3 py-1.5 rounded border border-fuchsia-400/50 text-fuchsia-200 bg-fuchsia-500/15 hover:bg-fuchsia-400/25 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
       title="将当前会话的工具权重与排除策略保存为技能"
     >

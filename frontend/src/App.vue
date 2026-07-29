@@ -10,6 +10,7 @@ import ChatModal from './components/ChatModal.vue'
 import ReportModal from './components/ReportModal.vue'
 import CompareModal from './components/CompareModal.vue'
 import SavePromptModal from './components/SavePromptModal.vue'
+import SaveStrategyModal from './components/SaveStrategyModal.vue'
 import AgentSessionModal from './components/AgentSessionModal.vue'
 import ReportReviewModal from './components/ReportReviewModal.vue'
 
@@ -188,6 +189,8 @@ onMounted(() => {
     <CompareModal />
     <!-- 策略保存提醒弹窗 -->
     <SavePromptModal />
+    <!-- 策略命名保存弹窗 -->
+    <SaveStrategyModal />
     <!-- 复盘合并大弹窗：子报告结果 + 私聊 + 快捷异议 -->
     <AgentSessionModal />
     <!-- 复盘报告审核弹窗 -->

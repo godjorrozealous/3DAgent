@@ -12,6 +12,8 @@ const uploadError = ref('')
 const agent = computed(() => (store.chatTarget ? store.agents[store.chatTarget] : null))
 const messages = computed(() => store.chatMessages[store.chatTarget] || [])
 const hasMgmt = computed(() => store.chatTarget === 'audit' || store.chatTarget === 'commander')
+// 实时诊断执行中禁止干预输入（复盘模式可干预）
+const inputLocked = computed(() => store.running && !store.replayMode)
 
 watch(() => store.chatTarget, (target) => {
   if (target === 'audit') listTemplates()
@@ -25,7 +27,7 @@ watch(messages, async () => {
 
 function submit() {
   const text = input.value.trim()
-  if (!text || !store.chatTarget) return
+  if (!text || !store.chatTarget || inputLocked.value) return
   sendChat(store.chatTarget, text)
   input.value = ''
 }
@@ -176,12 +178,14 @@ async function onUpload(e) {
       <input
         v-model="input"
         @keyup.enter="submit"
-        placeholder="输入干预指令，回车发送…"
-        class="flex-1 bg-slate-900/80 border border-cyan-500/30 rounded px-3 py-1.5 text-xs text-cyan-100 outline-none focus:border-cyan-300 placeholder:text-slate-600"
+        :disabled="inputLocked"
+        :placeholder="inputLocked ? '实时诊断执行中，复盘时可干预…' : '输入干预指令，回车发送…'"
+        class="flex-1 bg-slate-900/80 border border-cyan-500/30 rounded px-3 py-1.5 text-xs text-cyan-100 outline-none focus:border-cyan-300 placeholder:text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
       />
       <button
         @click="submit"
-        class="text-xs font-bold px-3.5 rounded bg-cyan-500/25 text-cyan-200 border border-cyan-400/50 hover:bg-cyan-400/40"
+        :disabled="inputLocked"
+        class="text-xs font-bold px-3.5 rounded bg-cyan-500/25 text-cyan-200 border border-cyan-400/50 hover:bg-cyan-400/40 disabled:opacity-40 disabled:cursor-not-allowed"
       >发送</button>
     </div>
   </div>
