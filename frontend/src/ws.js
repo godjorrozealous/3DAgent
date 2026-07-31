@@ -63,10 +63,12 @@ function handle(event) {
       break
     case 'report_review_request':
       store.reportReviewPending = true
+      store.reportReviewEmpty = !!event.empty
       break
     case 'confirm_queue_clear':
       store.confirmQueue.length = 0
       store.reportReviewPending = false
+      store.reportReviewEmpty = false
       store.agentSession = null
       break
     case 'run_state':
@@ -144,7 +146,7 @@ export const activateSkill = (name) => send({ type: 'activate_skill', name })
 export const resetSkills = () => send({ type: 'reset_skills' })
 export const sendToolConfirm = (tool, decision, value) =>
   send({ type: 'tool_confirm_response', tool, decision, value })
-export const sendReportReview = (satisfied, instruction) =>
-  send({ type: 'report_review_response', satisfied, instruction })
+export const sendReportReview = (satisfied, instruction, kind) =>
+  send({ type: 'report_review_response', satisfied, instruction, kind })
 export const respondSavePrompt = (save, name) =>
   send({ type: 'save_prompt_response', save, name })

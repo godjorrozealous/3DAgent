@@ -5,11 +5,13 @@ import { sendReportReview } from '../ws'
 
 const opinionOpen = ref(false)
 const instruction = ref('')
+const opinionKind = ref('report')
 
 watch(() => store.reportReviewPending, (pending) => {
   if (pending) {
     opinionOpen.value = false
     instruction.value = ''
+    opinionKind.value = 'report'
   }
 })
 
@@ -28,7 +30,7 @@ function approve() {
 function submitRevision() {
   const text = instruction.value.trim()
   if (!text) return
-  sendReportReview(false, text)
+  sendReportReview(false, text, opinionKind.value)
   store.reportReviewPending = false
 }
 </script>
@@ -50,11 +52,22 @@ function submitRevision() {
 
       <!-- 内容 -->
       <div class="px-4 py-3 text-xs text-slate-200 leading-relaxed">
-        复盘报告已生成，是否符合要求？
+        <template v-if="store.reportReviewEmpty">⚠ 复盘报告内容为空，请提交「诊断流程问题」要求重新执行诊断。</template>
+        <template v-else>复盘报告已生成，是否符合要求？</template>
       </div>
 
       <!-- 意见输入区 -->
       <div v-if="opinionOpen" class="px-4 pb-3">
+        <div class="flex flex-col gap-1 mb-2 text-[11px]">
+          <label class="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+            <input type="radio" value="report" v-model="opinionKind" class="accent-emerald-400" />
+            报告表述问题（仅由报告智能体修改报告）
+          </label>
+          <label class="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+            <input type="radio" value="diagnosis" v-model="opinionKind" class="accent-amber-400" />
+            诊断流程问题（司令收集意见后重新执行完整诊断）
+          </label>
+        </div>
         <textarea
           v-model="instruction"
           rows="3"

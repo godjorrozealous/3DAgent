@@ -167,6 +167,12 @@ function close() {
         >×</button>
       </div>
 
+      <!-- 空结果标记 -->
+      <div
+        v-if="session.empty"
+        class="px-4 py-2 text-[11px] text-amber-300 bg-amber-500/10 border-b border-amber-400/30 shrink-0"
+      >⚠ 该智能体本轮未返回有效结果，可点击「重新检查」要求重跑该工具</div>
+
       <!-- 结果区 -->
       <div v-if="hasResult" class="max-h-56 overflow-y-auto px-4 py-3 border-b border-cyan-400/20 shrink-0">
         <div class="text-slate-500 text-[10px] mb-1.5">子报告结构化结果</div>

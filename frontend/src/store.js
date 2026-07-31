@@ -31,6 +31,7 @@ export const store = reactive({
   savePrompt: null,      // null | { interventions, context }
   saveNaming: null,      // null | { suggested: string } 命名保存弹窗
   reportReviewPending: false,
+  reportReviewEmpty: false, // 复盘报告为空标记（report_review_request.empty）
   reportModal: null,     // null | { title, content }
   compareOpen: false,
   valueOverrides: {},    // session_snapshot.overrides
