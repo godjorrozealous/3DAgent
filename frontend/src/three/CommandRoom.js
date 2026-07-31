@@ -52,8 +52,8 @@ function limb(a, b, r, mat) {
 }
 
 const MAT = {
-  desk: new THREE.MeshStandardMaterial({ color: 0xe8edf2, metalness: 0.3, roughness: 0.5 }),
-  chair: new THREE.MeshStandardMaterial({ color: 0xcfd8e0, roughness: 0.6 }),
+  desk: new THREE.MeshStandardMaterial({ color: 0x233148, metalness: 0.5, roughness: 0.4 }),
+  chair: new THREE.MeshStandardMaterial({ color: 0x2a3a52, roughness: 0.6 }),
   skin: new THREE.MeshStandardMaterial({ color: 0xf1c27d, roughness: 0.7 }),
   dark: new THREE.MeshStandardMaterial({ color: 0x5a6672, roughness: 0.7 }),
   gold: new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.8, roughness: 0.3 }),
@@ -333,8 +333,8 @@ export class CommandRoom {
     container.appendChild(this.renderer.domElement)
 
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(0xdfe8f0)
-    this.scene.fog = new THREE.FogExp2(0xdfe8f0, 0.004)
+    this.scene.background = new THREE.Color(0x0b1220)
+    this.scene.fog = new THREE.FogExp2(0x0b1220, 0.004)
     this.camera = new THREE.PerspectiveCamera(
       55, container.clientWidth / container.clientHeight, 0.1, 500
     )
@@ -361,14 +361,14 @@ export class CommandRoom {
   }
 
   _buildLights() {
-    this.scene.add(new THREE.AmbientLight(0xffffff, 3.2))
-    const hemi = new THREE.HemisphereLight(0xffffff, 0xb0c4d4, 1.6)
+    this.scene.add(new THREE.AmbientLight(0x8fa3c8, 0.7))
+    const hemi = new THREE.HemisphereLight(0x3a4a6b, 0x0a0f1a, 0.6)
     this.scene.add(hemi)
     // 顶部平行光：模拟天窗日光
-    const sun = new THREE.DirectionalLight(0xfff5e6, 2.2)
+    const sun = new THREE.DirectionalLight(0x9fc8ff, 0.5)
     sun.position.set(0, 18, 4)
     this.scene.add(sun)
-    const screenGlow = new THREE.PointLight(0x2a6f8f, 30, 40)
+    const screenGlow = new THREE.PointLight(0x22d3ee, 40, 40)
     screenGlow.position.set(0, 7, -14)
     this.scene.add(screenGlow)
   }
@@ -377,20 +377,20 @@ export class CommandRoom {
     // 浅灰白地板 + 浅网格
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(48, 42),
-      new THREE.MeshStandardMaterial({ color: 0xdde4ea, roughness: 0.35, metalness: 0.1 })
+      new THREE.MeshStandardMaterial({ color: 0x141b2a, roughness: 0.4, metalness: 0.3 })
     )
     floor.rotation.x = -Math.PI / 2
     floor.position.z = -3
     this.scene.add(floor)
 
-    const grid = new THREE.GridHelper(48, 48, 0x9fb3c8, 0xc3d2de)
+    const grid = new THREE.GridHelper(48, 48, 0x1e3a5f, 0x182742)
     grid.material.transparent = true
     grid.material.opacity = 0.25
     grid.position.set(0, 0.02, -3)
     this.scene.add(grid)
 
     // 白色环形外壳：后墙 + 侧墙
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0xeef2f5, roughness: 0.9 })
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x101828, roughness: 0.9 })
     const backWall = new THREE.Mesh(new THREE.PlaneGeometry(48, 16), wallMat)
     backWall.position.set(0, 8, -18)
     this.scene.add(backWall)
@@ -402,12 +402,12 @@ export class CommandRoom {
     }
 
     // 玻璃幕墙 + 幕墙外天际线（由外到内：白外壳 → 天际线 → 玻璃）
-    const skylineMat = new THREE.MeshBasicMaterial({ color: 0x9db8cc, map: makeSkylineTexture() })
+    const skylineMat = new THREE.MeshBasicMaterial({ color: 0x1c2f4a, map: makeSkylineTexture() })
     const backSkyline = new THREE.Mesh(new THREE.PlaneGeometry(80, 14), skylineMat)
     backSkyline.position.set(0, 7, -30)
     this.scene.add(backSkyline)
     const glassMat = new THREE.MeshPhysicalMaterial({
-      color: 0xbfd9e8, transparent: true, opacity: 0.25, roughness: 0.1,
+      color: 0x2a4a6b, transparent: true, opacity: 0.35, roughness: 0.1,
     })
     for (const x of [-22, 22]) {
       const glass = new THREE.Mesh(new THREE.PlaneGeometry(42, 10), glassMat)
@@ -423,12 +423,12 @@ export class CommandRoom {
     // 格栅天窗：发光顶板 + 两组格栅梁
     const skylight = new THREE.Mesh(
       new THREE.PlaneGeometry(48, 42),
-      new THREE.MeshBasicMaterial({ color: 0xf4f8fb })
+      new THREE.MeshBasicMaterial({ color: 0x16233a })
     )
     skylight.rotation.x = Math.PI / 2 // 朝下发光
     skylight.position.set(0, 14, -3)
     this.scene.add(skylight)
-    const beamMat = new THREE.MeshStandardMaterial({ color: 0xc9d4dc, roughness: 0.8 })
+    const beamMat = new THREE.MeshStandardMaterial({ color: 0x1c2942, roughness: 0.8 })
     for (let i = 0; i < 21; i++) {
       const beam = new THREE.Mesh(new THREE.BoxGeometry(48, 0.12, 0.3), beamMat)
       beam.position.set(0, 13.9, -23 + i * 2)
@@ -482,7 +482,7 @@ export class CommandRoom {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
     this.dust = new THREE.Points(
       geo,
-      new THREE.PointsMaterial({ color: 0x8fa8bd, size: 0.08, transparent: true, opacity: 0.35 })
+      new THREE.PointsMaterial({ color: 0x4a6a9a, size: 0.08, transparent: true, opacity: 0.35 })
     )
     this.scene.add(this.dust)
   }
@@ -591,7 +591,7 @@ export class CommandRoom {
       station.add(label)
 
       // 席位台灯（照亮人物与桌面）
-      const lamp = new THREE.PointLight(0xffe0b3, def.kind === 'officer' ? 22 : 10, 7)
+      const lamp = new THREE.PointLight(0x9fd8ff, def.kind === 'officer' ? 22 : 10, 7)
       lamp.position.set(0, beaconY - 0.4, 1.2)
       station.add(lamp)
 
