@@ -40,10 +40,10 @@ import { startDiagnosis, openSaveNaming, replay } from '../ws'
     </button>
 
     <button
-      :disabled="store.running || !store.connected || !store.strategies.length"
+      :disabled="store.running || !store.connected || !store.summaries.realtime"
       @click="replay"
       class="text-xs font-bold px-3 py-1.5 rounded border border-emerald-400/50 text-emerald-200 bg-emerald-500/15 hover:bg-emerald-400/25 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-      title="按已保存的人工干预策略重新执行诊断并对比"
+      title="实时诊断完成后即可复盘：逐项确认各智能体结果并审核报告"
     >
       ↻ 复盘重跑
     </button>
