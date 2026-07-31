@@ -507,6 +507,9 @@ class AgentManager:
                 await self.log("commander", f"开始排队中的下一线路诊断：{nxt['text']}")
                 self.current_task = asyncio.create_task(
                     self.run_diagnosis(replay=False, text=nxt["text"]))
+            else:
+                self.current_line = ""
+                await self._broadcast_queue()
 
     def _trail(self, kind: str, tool: str = "", value=None, text: str = ""):
         self.intervention_trail.append({

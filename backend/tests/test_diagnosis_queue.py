@@ -120,3 +120,17 @@ async def test_replay_end_drains_queue(monkeypatch):
     await asyncio.sleep(0.5)  # 让 finally 启动的排队任务执行
     assert "线路B 跳闸" in calls  # 复盘结束后自动开始排队线路
     assert mgr.diagnosis_queue == []
+
+
+async def test_current_line_cleared_after_run(monkeypatch):
+    calls = []
+    gate = asyncio.Event()
+    gate.set()  # 不挂起，直接跑完
+    mgr = make_mgr(monkeypatch, calls, gate)
+    ws = FakeWS()
+    await mgr.connect(ws)
+    await mgr.handle_message({"type": "start_diagnosis", "text": "线路A 跳闸"})
+    await asyncio.sleep(0.5)
+    assert mgr.current_line == ""
+    queues = [e for e in ws.events if e["type"] == "diagnosis_queue"]
+    assert queues[-1]["current"] == ""
