@@ -272,13 +272,115 @@ class AgentManager:
                 await self.log("commander", "PLD 会话正在执行上一轮重诊断，等待其完成后再发起复盘……")
             await asyncio.sleep(3)
 
-    async def run_diagnosis(self, replay: bool = False):
+    async def _stream_run(self, message: str, replay: bool, run_record: dict) -> dict:
+        """执行一轮 PLD 诊断流：转发事件、更新席位、复盘中收集逐项确认并下发异议。
+
+        返回 complete 事件的 summary；PLD 报错抛 RuntimeError 由调用方捕获。
+        """
+        report_buf = ""
+        summary: dict = {}
+        tools_started = False
+        tools_done: set[str] = set()
+        started_logged = False
+        async for event in pld_client.chat_stream(message):
+            etype = event.get("event_type")
+            payload = event.get("payload", {})
+            sid = event.get("session_id")
+            if sid:
+                self.session_id = sid
+
+            if etype == "start":
+                if not started_logged:
+                    started_logged = True
+                    await self.log("commander", "PLDiagnosis 主智能体已受理，开始意图解析与诊断规划。")
+            elif etype == "thinking":
+                msg = (payload.get("message") or "").strip()
+                # 过滤 LLM 流式 JSON 片段（累积文本），只保留阶段性进度消息
+                if msg and not msg.startswith(("{", '"')):
+                    await self.log("commander", msg)
+                if "诊断计划" in msg:
+                    parsed = parse_planned_tools(msg)
+                    if parsed:
+                        self.planned_tools = parsed
+                        await self._refresh_snapshot()
+                if not tools_started and "执行诊断工具" in msg:
+                    tools_started = True
+                    await self._mark_tools_running()
+                if "生成诊断报告" in msg:
+                    await self.set_status("audit", "running")
+                    await self.log("audit", "接收各诊断工具原始输出，生成规范化综合报告……")
+            elif etype == "result":
+                # 单个诊断工具真实返回：更新对应席位
+                tool = payload.get("tool", "")
+                aid = TOOL_TO_AGENT.get(tool)
+                output = payload.get("output", {}) or {}
+                sd = output.get("structured_data", {}) or {}
+                if aid:
+                    tools_done.add(aid)
+                    if self.status[aid] == "running":
+                        await self.set_status(aid, "completed")
+                    fault = sd.get("fault_type", "—")
+                    conf = sd.get("confidence", "—")
+                    evid = (sd.get("evidence") or ["—"])[0]
+                    raw = output.get("raw_text", "")
+                    empty = not raw and not sd
+                    if empty:
+                        await self.log(aid, f"⚠ {tool} 未返回有效结果。")
+                    else:
+                        await self.log(aid, f"{tool} 返回：倾向「{fault}」，置信度 {conf}；证据：{evid}")
+                    # 将子报告实时推送到报告面板
+                    if raw:
+                        report_buf += f"\n\n## 📡 {AGENTS[aid]['name']}原始诊断\n\n{raw}\n"
+                        await self.broadcast({"type": "report", "content": report_buf, "done": False})
+                    if replay:
+                        self.pending_confirms[tool] = {
+                            "type": "tool_confirm_request",
+                            "agent": aid, "tool": tool,
+                            "fault_type": fault, "confidence": conf,
+                            "evidence": evid,
+                            "raw_text": raw, "structured_data": sd,
+                            "override": self.value_overrides.get(tool),
+                            "empty": empty,
+                        }
+                        await self.broadcast(self.pending_confirms[tool])
+            elif etype == "content":
+                chunk = payload.get("content", "")
+                if chunk:
+                    report_buf += chunk
+                    await self.broadcast({"type": "report", "content": report_buf, "done": False})
+            elif etype == "complete":
+                report = payload.get("report") or report_buf
+                summary = payload.get("summary", {})
+                self.last_report = report
+                run_record["summary"] = summary
+                run_record["report"] = report
+                run_record["tools_run"] = sorted(tools_done)
+                await self.broadcast({"type": "report", "content": report, "done": True})
+                if replay:
+                    self._confirms_done = asyncio.Event()
+                    if self.pending_confirms:
+                        await self.log("commander", "等待指挥员逐项确认各工具诊断结果……")
+                        try:
+                            await asyncio.wait_for(self._confirms_done.wait(), timeout=1800)
+                        except asyncio.TimeoutError:
+                            await self.log("commander", "确认等待超时，按无异议继续。")
+                            self.pending_confirms.clear()
+                    await self._dispatch_objections()
+            elif etype == "error":
+                raise RuntimeError(payload.get("message", "PLDiagnosis 返回错误"))
+        return summary
+
+    async def run_diagnosis(self, replay: bool = False, text: str = ""):
+        message = text or DIAGNOSE_MESSAGE
+        self.current_line = message
         await self.broadcast({"type": "report", "content": "", "done": False, "reset": True})
         self.intervention_trail = []
         # 每轮开跑重置本轮计划，防止上一轮「诊断计划」残留被误用
         self.planned_tools = []
-        report_buf = ""
+        if not replay:
+            self.objection_log = []
         run_record: dict = {"replay": replay, "time": datetime.datetime.now().strftime("%H:%M:%S")}
+        summary: dict = {}
         try:
             self._run_replay = replay
             self.current_task = asyncio.current_task()
@@ -291,115 +393,52 @@ class AgentManager:
             if replay:
                 await self.log("commander", "【复盘】按已保存的人工干预策略重新执行诊断，验证策略是否生效。")
             else:
-                await self.log("commander", f"接收到任务：{DIAGNOSE_MESSAGE}")
+                await self.log("commander", f"接收到任务：{message}")
 
-            tools_started = False
-            tools_done: set[str] = set()
-            started_logged = False
-            async for event in pld_client.chat_stream(DIAGNOSE_MESSAGE):
-                etype = event.get("event_type")
-                payload = event.get("payload", {})
-                sid = event.get("session_id")
-                if sid:
-                    self.session_id = sid
+            summary = await self._stream_run(message, replay, run_record)
 
-                if etype == "start":
-                    if not started_logged:
-                        started_logged = True
-                        await self.log("commander", "PLDiagnosis 主智能体已受理，开始意图解析与诊断规划。")
-                elif etype == "thinking":
-                    msg = (payload.get("message") or "").strip()
-                    # 过滤 LLM 流式 JSON 片段（累积文本），只保留阶段性进度消息
-                    if msg and not msg.startswith(("{", '"')):
-                        await self.log("commander", msg)
-                    if "诊断计划" in msg:
-                        parsed = parse_planned_tools(msg)
-                        if parsed:
-                            self.planned_tools = parsed
-                            await self._refresh_snapshot()
-                    if not tools_started and "执行诊断工具" in msg:
-                        tools_started = True
-                        await self._mark_tools_running()
-                    if "生成诊断报告" in msg:
-                        await self.set_status("audit", "running")
-                        await self.log("audit", "接收各诊断工具原始输出，生成规范化综合报告……")
-                elif etype == "result":
-                    # 单个诊断工具真实返回：更新对应席位
-                    tool = payload.get("tool", "")
-                    aid = TOOL_TO_AGENT.get(tool)
-                    output = payload.get("output", {}) or {}
-                    sd = output.get("structured_data", {}) or {}
-                    if aid:
-                        tools_done.add(aid)
-                        if self.status[aid] == "running":
-                            await self.set_status(aid, "completed")
-                        fault = sd.get("fault_type", "—")
-                        conf = sd.get("confidence", "—")
-                        evid = (sd.get("evidence") or ["—"])[0]
-                        await self.log(aid, f"{tool} 返回：倾向「{fault}」，置信度 {conf}；证据：{evid}")
-                        # 将子报告实时推送到报告面板
-                        raw = output.get("raw_text", "")
-                        if raw:
-                            report_buf += f"\n\n## 📡 {AGENTS[aid]['name']}原始诊断\n\n{raw}\n"
-                            await self.broadcast({"type": "report", "content": report_buf, "done": False})
-                        if replay and aid:
-                            self.pending_confirms[tool] = {
-                                "type": "tool_confirm_request",
-                                "agent": aid, "tool": tool,
-                                "fault_type": fault, "confidence": conf,
-                                "evidence": evid,
-                                "raw_text": raw, "structured_data": sd,
-                                "override": self.value_overrides.get(tool),
-                            }
-                            await self.broadcast(self.pending_confirms[tool])
-                elif etype == "content":
-                    chunk = payload.get("content", "")
-                    if chunk:
-                        report_buf += chunk
-                        await self.broadcast({"type": "report", "content": report_buf, "done": False})
-                elif etype == "complete":
-                    report = payload.get("report") or report_buf
-                    summary = payload.get("summary", {})
-                    self.last_report = report
-                    run_record["summary"] = summary
-                    run_record["report"] = report
-                    run_record["tools_run"] = sorted(tools_done)
-                    await self.broadcast({"type": "report", "content": report, "done": True})
-                    if replay:
-                        self._confirms_done = asyncio.Event()
-                        if self.pending_confirms:
-                            await self.log("commander", "等待指挥员逐项确认各工具诊断结果……")
-                            try:
-                                await asyncio.wait_for(self._confirms_done.wait(), timeout=1800)
-                            except asyncio.TimeoutError:
-                                await self.log("commander", "确认等待超时，按无异议继续。")
-                                self.pending_confirms.clear()
-                        await self._dispatch_objections()
-                        # 报告审核循环:反复询问指挥员「报告是否符合要求?」,最多 5 轮
-                        for _ in range(5):
-                            self._review_event = asyncio.Event()
-                            self._review_response = {}
-                            await self.broadcast({"type": "report_review_request"})
-                            try:
-                                await asyncio.wait_for(self._review_event.wait(), timeout=1800)
-                            except asyncio.TimeoutError:
-                                break
-                            if self._review_response.get("satisfied"):
-                                break
-                            instruction = str(self._review_response.get("instruction", "")).strip()
-                            if not instruction:
-                                break
-                            await self.log("audit", f"按指挥员意见修改报告:{instruction}")
-                            self._trail("report_modify", text=instruction)
-                            await self._wait_pld_idle()
-                            async for ev in pld_client.chat_stream(instruction):
-                                p = ev.get("payload", {})
-                                if ev.get("event_type") == "complete" and p.get("report"):
-                                    self.last_report = p["report"]
-                                    await self.broadcast({"type": "report", "content": p["report"], "done": True})
-                    await self._finish_run(run_record, summary, replay)
-                elif etype == "error":
-                    raise RuntimeError(payload.get("message", "PLDiagnosis 返回错误"))
+            # 以下步骤沿用旧版嵌套在 complete 分支内的语义：仅在 complete 发生后执行，
+            # 避免流提前结束时空等审核响应 1800s / _finish_run 补记日志干扰
+            run_completed = "report" in run_record
+            if replay and run_completed:
+                # 报告审核循环：报告问题→仅改报告；诊断问题→司令收集意见重跑完整诊断；最多 5 轮
+                for _ in range(5):
+                    self._review_event = asyncio.Event()
+                    self._review_response = {}
+                    await self.broadcast({
+                        "type": "report_review_request",
+                        "empty": not bool((self.last_report or "").strip()),
+                    })
+                    try:
+                        await asyncio.wait_for(self._review_event.wait(), timeout=1800)
+                    except asyncio.TimeoutError:
+                        break
+                    if self._review_response.get("satisfied"):
+                        break
+                    instruction = str(self._review_response.get("instruction", "")).strip()
+                    if not instruction:
+                        break
+                    now = datetime.datetime.now().strftime("%H:%M:%S")
+                    if self._review_response.get("kind", "report") == "diagnosis":
+                        self.objection_log.append({
+                            "time": now, "kind": "diagnosis_objection", "text": instruction})
+                        await self.log("commander",
+                                       f"复盘异议（诊断流程）：{instruction}，司令收集意见后重新组织完整诊断。")
+                        summary = await self._stream_run(
+                            f"{message}\n【复盘异议，本次诊断必须采纳】{instruction}", True, run_record)
+                        continue
+                    await self.log("audit", f"按指挥员意见修改报告:{instruction}")
+                    self._trail("report_modify", text=instruction)
+                    self.objection_log.append({
+                        "time": now, "kind": "report_modify", "text": instruction})
+                    await self._wait_pld_idle()
+                    async for ev in pld_client.chat_stream(instruction):
+                        p = ev.get("payload", {})
+                        if ev.get("event_type") == "complete" and p.get("report"):
+                            self.last_report = p["report"]
+                            await self.broadcast({"type": "report", "content": p["report"], "done": True})
+            if run_completed:
+                await self._finish_run(run_record, summary, replay)
 
         except Exception as exc:  # noqa: BLE001
             await self.log("commander", f"诊断流程异常：{exc}")
