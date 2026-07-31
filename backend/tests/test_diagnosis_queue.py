@@ -66,3 +66,57 @@ async def test_cancel_queued(monkeypatch):
     gate.set()
     await asyncio.sleep(0.5)
     assert "线路B 跳闸" not in calls
+
+
+REPLAY_STREAM = [
+    {"event_type": "start", "payload": {}, "session_id": "s1"},
+    {"event_type": "result", "payload": {
+        "tool": "LightningDiagnosisTool",
+        "output": {"structured_data": {"fault_type": "雷击-绕击", "confidence": 0.985,
+                                       "evidence": ["证据A"]}, "raw_text": "raw"}},
+     "session_id": "s1"},
+    {"event_type": "complete", "payload": {
+        "report": "# 复盘报告", "summary": {"fault_type": "雷击-绕击", "confidence": 0.9}},
+     "session_id": "s1"},
+]
+
+
+async def test_replay_end_drains_queue(monkeypatch):
+    """回归：复盘运行中入队的实时诊断，复盘结束后应自动开始（此前 finally 跳过排空导致滞留）。"""
+    calls = []
+
+    async def fake_stream(msg):
+        calls.append(msg)
+        for e in REPLAY_STREAM:
+            yield e
+
+    async def fake_session(sid):
+        return SESSION
+
+    monkeypatch.setattr(agent_manager.pld_client, "chat_stream", fake_stream)
+    monkeypatch.setattr(agent_manager.pld_client, "get_session", fake_session)
+    mgr = agent_manager.AgentManager()
+    mgr.session_id = "s1"
+    ws = FakeWS()
+    await mgr.connect(ws)
+
+    await mgr.handle_message({"type": "replay"})
+    replay_task = mgr.current_task
+    await asyncio.sleep(0.3)  # 复盘进行中（阻塞在工具确认上）
+
+    # 复盘运行中提交新线路 -> 入队而非直接执行
+    await mgr.handle_message({"type": "start_diagnosis", "text": "线路B 跳闸"})
+    assert len(mgr.diagnosis_queue) == 1
+    assert mgr.diagnosis_queue[0]["text"] == "线路B 跳闸"
+
+    async def respond():
+        await mgr.handle_message({"type": "tool_confirm_response",
+                                  "tool": "LightningDiagnosisTool",
+                                  "decision": "ok"})
+        await asyncio.sleep(0.3)
+        await mgr.handle_message({"type": "report_review_response", "satisfied": True})
+
+    await asyncio.gather(replay_task, respond())
+    await asyncio.sleep(0.5)  # 让 finally 启动的排队任务执行
+    assert "线路B 跳闸" in calls  # 复盘结束后自动开始排队线路
+    assert mgr.diagnosis_queue == []

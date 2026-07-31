@@ -501,7 +501,7 @@ class AgentManager:
         finally:
             self._run_replay = False
             await self.broadcast({"type": "run_state", "mode": None})
-            if not replay and self.diagnosis_queue:
+            if self.diagnosis_queue:
                 nxt = self.diagnosis_queue.pop(0)
                 await self._broadcast_queue()
                 await self.log("commander", f"开始排队中的下一线路诊断：{nxt['text']}")
