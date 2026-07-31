@@ -1,0 +1,100 @@
+<script setup>
+import { computed, ref } from 'vue'
+import { store } from '../store'
+import { requestRecord, setView } from '../ws'
+
+const keyword = ref('')
+
+const filtered = computed(() => {
+  const k = keyword.value.trim().toLowerCase()
+  if (!k) return store.records
+  return store.records.filter((r) =>
+    [r.line, r.time, ...(r.strategies || []), ...(r.objections || [])]
+      .join(' ').toLowerCase().includes(k))
+})
+
+function viewReport(title, content) {
+  store.reportModal = { title, content: content || '（空）' }
+}
+
+function objectionText(o) {
+  return o.text || `${o.tool || ''} ${o.decision || ''}${o.value != null ? ' = ' + o.value : ''}`
+}
+</script>
+
+<template>
+  <div class="absolute inset-0 z-10 bg-slate-950/95 flex flex-col p-4 gap-3 overflow-hidden pointer-events-auto">
+    <div class="flex items-center gap-3 shrink-0">
+      <span class="text-cyan-300 font-bold text-sm tracking-widest">◈ 诊断结果集</span>
+      <input
+        v-model="keyword"
+        placeholder="关键字搜索（线路 / 策略 / 复盘要求）…"
+        class="flex-1 max-w-md bg-slate-900/80 border border-cyan-500/30 rounded px-3 py-1.5 text-xs text-cyan-100 outline-none focus:border-cyan-300 placeholder:text-slate-600"
+      />
+      <button
+        @click="setView('room')"
+        class="text-xs px-3 py-1.5 rounded border border-cyan-400/50 text-cyan-200 bg-cyan-500/15 hover:bg-cyan-400/25"
+      >返回指挥室</button>
+    </div>
+
+    <div class="flex-1 flex gap-3 min-h-0">
+      <!-- 记录列表 -->
+      <div class="w-[380px] shrink-0 glass rounded-lg overflow-y-auto">
+        <div
+          v-for="r in [...filtered].reverse()" :key="r.id"
+          @click="requestRecord(r.id)"
+          class="px-3 py-2 border-b border-slate-700/40 cursor-pointer hover:bg-cyan-500/10"
+          :class="store.recordDetail?.id === r.id ? 'bg-cyan-500/15' : ''"
+        >
+          <div class="text-xs text-cyan-100 truncate" :title="r.line">{{ r.line }}</div>
+          <div class="text-[10px] text-slate-500 mt-0.5 flex gap-2 flex-wrap">
+            <span>#{{ r.id }} · {{ r.time }}</span>
+            <span v-if="r.has_replay" class="text-emerald-300">已复盘</span>
+            <span v-for="s in r.strategies" :key="s" class="text-fuchsia-300">{{ s }}</span>
+          </div>
+        </div>
+        <div v-if="!filtered.length" class="text-slate-600 text-xs text-center py-8">暂无记录</div>
+      </div>
+
+      <!-- 详情 -->
+      <div class="flex-1 glass rounded-lg overflow-y-auto p-4 min-w-0">
+        <template v-if="store.recordDetail">
+          <div class="text-cyan-200 text-sm font-bold mb-1">{{ store.recordDetail.line }}</div>
+          <div class="text-[10px] text-slate-500 mb-3">#{{ store.recordDetail.id }} · {{ store.recordDetail.time }}</div>
+
+          <div class="flex gap-2 mb-3 flex-wrap">
+            <button
+              v-if="store.recordDetail.realtime"
+              @click="viewReport('实时诊断报告', store.recordDetail.realtime.report)"
+              class="text-xs px-3 py-1.5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 hover:bg-cyan-400/30"
+            >实时诊断报告</button>
+            <button
+              v-for="(rp, i) in store.recordDetail.replays" :key="i"
+              @click="viewReport('复盘报告' + (store.recordDetail.replays.length > 1 ? ' ' + (i + 1) : ''), rp.report)"
+              class="text-xs px-3 py-1.5 rounded bg-emerald-500/20 text-emerald-200 border border-emerald-400/40 hover:bg-emerald-400/30"
+            >复盘报告{{ store.recordDetail.replays.length > 1 ? ' ' + (i + 1) : '' }}</button>
+          </div>
+
+          <div v-if="store.recordDetail.objections?.length" class="mb-3">
+            <div class="text-amber-300 text-[10px] font-bold mb-1">复盘要求与异议</div>
+            <div
+              v-for="(o, i) in store.recordDetail.objections" :key="i"
+              class="text-[11px] text-slate-300 border border-slate-600/40 bg-slate-800/50 rounded px-2 py-1 mb-1"
+            >
+              <span class="text-slate-500">[{{ o.kind }} {{ o.time }}]</span> {{ objectionText(o) }}
+            </div>
+          </div>
+
+          <div v-if="store.recordDetail.strategies?.length">
+            <div class="text-fuchsia-300 text-[10px] font-bold mb-1">保存的策略</div>
+            <span
+              v-for="s in store.recordDetail.strategies" :key="s"
+              class="inline-block text-[11px] px-1.5 py-0.5 mr-1 rounded bg-fuchsia-500/15 border border-fuchsia-400/40 text-fuchsia-200"
+            >{{ s }}</span>
+          </div>
+        </template>
+        <div v-else class="text-slate-600 text-xs text-center py-16">选择左侧记录查看详情</div>
+      </div>
+    </div>
+  </div>
+</template>

@@ -13,6 +13,7 @@ import SavePromptModal from './components/SavePromptModal.vue'
 import SaveStrategyModal from './components/SaveStrategyModal.vue'
 import AgentSessionModal from './components/AgentSessionModal.vue'
 import ReportReviewModal from './components/ReportReviewModal.vue'
+import HistoryView from './components/HistoryView.vue'
 
 const canvasHost = ref(null)
 const leftOpen = ref(true)
@@ -100,10 +101,10 @@ onMounted(() => {
 <template>
   <div class="relative w-full h-full">
     <!-- 3D WebGL 画布 -->
-    <div ref="canvasHost" class="absolute inset-0"></div>
+    <div ref="canvasHost" class="absolute inset-0" v-show="store.view === 'room'"></div>
 
     <!-- HUD 覆盖层 -->
-    <div class="absolute inset-0 pointer-events-none flex flex-col p-3 gap-2">
+    <div class="absolute inset-0 pointer-events-none flex flex-col p-3 gap-2" v-show="store.view === 'room'">
       <TopBar />
 
       <!-- 策略 HUD 信息卡：第一行=策略名+调用标签，第二行=排除标签（红=人工 / 灰=条件） -->
@@ -180,6 +181,9 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- 历史结果集视图 -->
+    <HistoryView v-if="store.view === 'history'" />
 
     <!-- 双击智能体弹出的直聊终端 -->
     <ChatModal />

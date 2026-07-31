@@ -1,10 +1,5 @@
 import { reactive } from 'vue'
 
-// 真实数据平台当前仅有雅湖线一条跳闸记录（tripId: S_Y202505080552）
-export const LINES = [
-  { line: '±800kV 雅湖线', tower: '2025-05-08 19:46 跳闸' },
-]
-
 export const store = reactive({
   connected: false,
   running: false,
@@ -12,7 +7,12 @@ export const store = reactive({
   logs: [],              // 事件流
   report: '',
   reportDone: false,
-  selectedLine: 0,
+  lineText: '雅湖线 2025-05-08 19:46 发生跳闸，请进行故障综合诊断',
+  diagQueue: [],         // 排队中的诊断 [{ text, time }]
+  currentLine: '',       // 当前执行中的诊断文本
+  view: 'room',          // 'room' | 'history'
+  records: [],           // 结果集列表（records_list）
+  recordDetail: null,    // 结果集详情（record_detail）
   chatTarget: null,      // 双击打开直聊的智能体 id
   chatMessages: {},      // agentId -> [{ from, message, time }]
   sessionId: null,

@@ -1,4 +1,4 @@
-import { store, pushLog, pushChat, LINES } from './store'
+import { store, pushLog, pushChat } from './store'
 
 let ws = null
 const listeners = new Set()
@@ -89,6 +89,16 @@ function handle(event) {
     case 'replay_compare':
       store.compare = event
       break
+    case 'diagnosis_queue':
+      store.currentLine = event.current || ''
+      store.diagQueue = event.queue || []
+      break
+    case 'records_list':
+      store.records = event.records || []
+      break
+    case 'record_detail':
+      store.recordDetail = event.record
+      break
   }
 }
 
@@ -109,7 +119,8 @@ export function send(data) {
 }
 
 export function startDiagnosis() {
-  send({ type: 'start_diagnosis', ...LINES[store.selectedLine] })
+  const text = store.lineText.trim()
+  if (text) send({ type: 'start_diagnosis', text })
 }
 
 // 命名保存：本地时间 策略_YYYYMMDD_HHmm（pad 补零，非 UTC）
@@ -150,3 +161,10 @@ export const sendReportReview = (satisfied, instruction, kind) =>
   send({ type: 'report_review_response', satisfied, instruction, kind })
 export const respondSavePrompt = (save, name) =>
   send({ type: 'save_prompt_response', save, name })
+export const cancelQueued = (index) => send({ type: 'cancel_queued', index })
+export const requestRecords = () => send({ type: 'list_records' })
+export const requestRecord = (id) => send({ type: 'get_record', id })
+export function setView(v) {
+  store.view = v
+  if (v === 'history') requestRecords()
+}
