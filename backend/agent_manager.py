@@ -21,6 +21,7 @@ from pathlib import Path
 from fastapi import WebSocket
 
 import pld_client
+import records
 import strategy_builder
 
 TRAILS_FILE = Path(__file__).parent / "data" / "strategy_trails.json"
@@ -57,7 +58,7 @@ TOOL_TO_AGENT = {v: k for k, v in TOOL_AGENTS.items()}
 
 DIAGNOSE_MESSAGE = "雅湖线 2025-05-08 19:46 发生跳闸，请进行故障综合诊断"
 
-SESSION_CONTEXT = "【当前会话：雅湖线 2025-05-08 19:46 跳闸诊断｜{tool}】"
+SESSION_CONTEXT = "【当前会话：{line}｜{tool}】"
 
 
 def parse_planned_tools(text: str) -> list[str]:
@@ -93,6 +94,7 @@ class AgentManager:
         self.objection_log: list[dict] = []     # 全程异议/意见/用户输入记录（供 skill 与结果集）
         self.current_line: str = ""             # 当前诊断线路文本（Task 6 使用）
         self.current_record_id: int | None = None  # 当前诊断对应的结果集记录 id（Task 6 使用）
+        self.diagnosis_queue: list[dict] = []   # 排队中的诊断（运行中提交的新线路）
 
     # ---------- 连接管理 ----------
     async def connect(self, ws: WebSocket):
@@ -104,6 +106,7 @@ class AgentManager:
             "strategies": self.saved_strategies,
             "session_id": self.session_id,
         })
+        await self._broadcast_queue()
 
     def disconnect(self, ws: WebSocket):
         self.connections.discard(ws)
@@ -143,7 +146,7 @@ class AgentManager:
     async def handle_message(self, data: dict):
         mtype = data.get("type")
         if mtype == "start_diagnosis":
-            await self._start_run(replay=False)
+            await self._start_run(replay=False, text=str(data.get("text", "")).strip())
         elif mtype == "replay":
             await self._start_run(replay=True)
         elif mtype == "save_strategy":
@@ -211,6 +214,18 @@ class AgentManager:
             self._review_response = data
             if self._review_event:
                 self._review_event.set()
+        elif mtype == "cancel_queued":
+            idx = int(data.get("index", -1))
+            if 0 <= idx < len(self.diagnosis_queue):
+                item = self.diagnosis_queue.pop(idx)
+                await self.log("commander", f"已取消排队诊断：{item['text']}")
+                await self._broadcast_queue()
+        elif mtype == "list_records":
+            await self.send_records()
+        elif mtype == "get_record":
+            rec = records.get_record(int(data.get("id", -1)))
+            if rec:
+                await self.broadcast({"type": "record_detail", "record": rec})
 
     # ---------- 模板 / 策略管理 ----------
     async def send_templates(self):
@@ -247,11 +262,39 @@ class AgentManager:
                     await self.broadcast({"type": "report", "content": report, "done": True})
         await self._refresh_snapshot()
 
-    async def _start_run(self, replay: bool):
+    async def _start_run(self, replay: bool, text: str = ""):
         if self.current_task and not self.current_task.done():
-            await self.log("commander", "已有诊断任务在执行中，请等待完成后再发起。")
+            if not replay and text:
+                self.diagnosis_queue.append({
+                    "text": text,
+                    "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                })
+                await self.log("commander",
+                               f"诊断执行中，已将「{text}」加入排队（第 {len(self.diagnosis_queue)} 位）。")
+                await self._broadcast_queue()
+            else:
+                await self.log("commander", "已有诊断任务在执行中，请等待完成后再发起。")
             return
-        self.current_task = asyncio.create_task(self.run_diagnosis(replay=replay))
+        self.current_task = asyncio.create_task(self.run_diagnosis(replay=replay, text=text))
+
+    async def _broadcast_queue(self):
+        await self.broadcast({
+            "type": "diagnosis_queue",
+            "current": self.current_line,
+            "queue": list(self.diagnosis_queue),
+        })
+
+    async def send_records(self):
+        try:
+            summaries = [{
+                "id": r.get("id"), "line": r.get("line", ""), "time": r.get("time", ""),
+                "has_replay": bool(r.get("replays")),
+                "strategies": r.get("strategies", []),
+                "objections": [o.get("text", "") for o in r.get("objections", []) if o.get("text")],
+            } for r in records.list_records()]
+            await self.broadcast({"type": "records_list", "records": summaries})
+        except Exception as exc:  # noqa: BLE001
+            await self.log("commander", f"诊断记录读取失败:{exc}")
 
     # ---------- 主诊断流程（转发 PLDiagnosis） ----------
     async def _wait_pld_idle(self, timeout: float = 300.0):
@@ -373,6 +416,7 @@ class AgentManager:
     async def run_diagnosis(self, replay: bool = False, text: str = ""):
         message = text or DIAGNOSE_MESSAGE
         self.current_line = message
+        await self._broadcast_queue()
         await self.broadcast({"type": "report", "content": "", "done": False, "reset": True})
         self.intervention_trail = []
         # 每轮开跑重置本轮计划，防止上一轮「诊断计划」残留被误用
@@ -457,6 +501,12 @@ class AgentManager:
         finally:
             self._run_replay = False
             await self.broadcast({"type": "run_state", "mode": None})
+            if not replay and self.diagnosis_queue:
+                nxt = self.diagnosis_queue.pop(0)
+                await self._broadcast_queue()
+                await self.log("commander", f"开始排队中的下一线路诊断：{nxt['text']}")
+                self.current_task = asyncio.create_task(
+                    self.run_diagnosis(replay=False, text=nxt["text"]))
 
     def _trail(self, kind: str, tool: str = "", value=None, text: str = ""):
         self.intervention_trail.append({
@@ -621,6 +671,20 @@ class AgentManager:
                 })
                 await self.log("commander", "【复盘】策略生效对比已生成，请查看复盘面板。")
 
+        # 结果集持久化：实时建档，复盘追加；异议快照随轮更新
+        try:
+            if replay:
+                if self.current_record_id is not None:
+                    records.attach_replay(self.current_record_id, run_record.get("report", ""), summary)
+                    records.set_objections(self.current_record_id, self.objection_log)
+            else:
+                rec = records.create_record(self.current_line, run_record["time"])
+                self.current_record_id = rec["id"]
+                records.attach_realtime(rec["id"], run_record.get("report", ""), summary)
+                records.set_objections(rec["id"], self.objection_log)
+        except Exception as exc:  # noqa: BLE001
+            await self.log("commander", f"诊断记录持久化失败：{exc}")
+
     # ---------- 人工直聊干预 ----------
     async def handle_chat(self, agent: str, message: str):
         if agent == "commander":
@@ -663,7 +727,7 @@ class AgentManager:
             await self.set_status("commander", "completed")
         else:
             tool = TOOL_AGENTS.get(agent, agent)
-            prefixed = SESSION_CONTEXT.format(tool=tool) + message
+            prefixed = SESSION_CONTEXT.format(line=self.current_line or "未知线路", tool=tool) + message
             await self.log(agent, f"收到针对 {tool} 的会话内要求，转发 PLDiagnosis 处理。")
             try:
                 async for event in pld_client.chat_stream(prefixed):
@@ -746,6 +810,8 @@ class AgentManager:
             "saved_to_pld": bool(result.get("success")),
         }
         self.saved_strategies.append(strategy)
+        if self.current_record_id is not None:
+            records.attach_strategy(self.current_record_id, name)
         trails = _load_trails()
         trails[name] = list(self.intervention_trail)
         _write_trails(trails)
