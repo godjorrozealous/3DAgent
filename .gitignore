@@ -6,3 +6,4 @@ __pycache__/
 vendor/
 .DS_Store
 .superpowers/
+backend/data/

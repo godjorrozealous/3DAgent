@@ -93,6 +93,7 @@ class AgentManager:
         self._run_replay: bool = False
         self.objection_log: list[dict] = []     # 全程异议/意见/用户输入记录（供 skill 与结果集）
         self.current_line: str = ""             # 当前诊断线路文本（Task 6 使用）
+        self.last_diagnosis_text: str = ""      # 最近一次实时诊断文本（复盘/策略保存兜底）
         self.current_record_id: int | None = None  # 当前诊断对应的结果集记录 id（Task 6 使用）
         self.diagnosis_queue: list[dict] = []   # 排队中的诊断（运行中提交的新线路）
 
@@ -215,7 +216,10 @@ class AgentManager:
             if self._review_event:
                 self._review_event.set()
         elif mtype == "cancel_queued":
-            idx = int(data.get("index", -1))
+            try:
+                idx = int(data.get("index", -1))
+            except (TypeError, ValueError):
+                idx = -1
             if 0 <= idx < len(self.diagnosis_queue):
                 item = self.diagnosis_queue.pop(idx)
                 await self.log("commander", f"已取消排队诊断：{item['text']}")
@@ -223,7 +227,11 @@ class AgentManager:
         elif mtype == "list_records":
             await self.send_records()
         elif mtype == "get_record":
-            rec = records.get_record(int(data.get("id", -1)))
+            try:
+                rid = int(data.get("id", -1))
+            except (TypeError, ValueError):
+                rid = -1
+            rec = records.get_record(rid)
             if rec:
                 await self.broadcast({"type": "record_detail", "record": rec})
 
@@ -414,7 +422,9 @@ class AgentManager:
         return summary
 
     async def run_diagnosis(self, replay: bool = False, text: str = ""):
-        message = text or DIAGNOSE_MESSAGE
+        message = text or (self.last_diagnosis_text if replay else "") or DIAGNOSE_MESSAGE
+        if not replay:
+            self.last_diagnosis_text = message
         self.current_line = message
         await self._broadcast_queue()
         await self.broadcast({"type": "report", "content": "", "done": False, "reset": True})
@@ -730,7 +740,7 @@ class AgentManager:
             await self.set_status("commander", "completed")
         else:
             tool = TOOL_AGENTS.get(agent, agent)
-            prefixed = SESSION_CONTEXT.format(line=self.current_line or "未知线路", tool=tool) + message
+            prefixed = SESSION_CONTEXT.format(line=self.current_line or self.last_diagnosis_text or "未知线路", tool=tool) + message
             await self.log(agent, f"收到针对 {tool} 的会话内要求，转发 PLDiagnosis 处理。")
             try:
                 async for event in pld_client.chat_stream(prefixed):
@@ -792,7 +802,7 @@ class AgentManager:
 
         content = strategy_builder.build_skill_markdown({
             "name": name,
-            "line_context": self.current_line or "transmission lines",
+            "line_context": self.current_line or self.last_diagnosis_text or "transmission lines",
             "weights": weights,
             "excluded_tools": excluded,
             "template_name": "",

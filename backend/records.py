@@ -1,5 +1,6 @@
 """诊断结果集持久化：每次诊断（实时+复盘）写入 backend/data/diagnosis_records.json。"""
 import json
+import logging
 from pathlib import Path
 
 RECORDS_FILE = Path(__file__).parent / "data" / "diagnosis_records.json"
@@ -9,6 +10,7 @@ def _load() -> list:
     try:
         return json.loads(RECORDS_FILE.read_text(encoding="utf-8"))
     except Exception:
+        logging.getLogger(__name__).warning("诊断记录文件损坏或不可读，按空记录处理: %s", RECORDS_FILE)
         return []
 
 

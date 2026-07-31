@@ -29,6 +29,8 @@ def build_skill_markdown(config: dict, skills_dir: Path = SKILLS_DIR) -> str:
 
 
 def _build_frontmatter(name: str, line: str) -> str:
+    name = name.replace("\n", " ").replace("\r", " ")
+    line = line.replace("\n", " ").replace("\r", " ")
     return f"""---
 name: {name}
 description: |
