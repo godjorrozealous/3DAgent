@@ -21,6 +21,7 @@ from pathlib import Path
 from fastapi import WebSocket
 
 import pld_client
+import strategy_builder
 
 TRAILS_FILE = Path(__file__).parent / "data" / "strategy_trails.json"
 
@@ -89,6 +90,9 @@ class AgentManager:
         self._chat_tasks: set[asyncio.Task] = set()
         self.planned_tools: list[str] = []
         self._run_replay: bool = False
+        self.objection_log: list[dict] = []     # 全程异议/意见/用户输入记录（供 skill 与结果集）
+        self.current_line: str = ""             # 当前诊断线路文本（Task 6 使用）
+        self.current_record_id: int | None = None  # 当前诊断对应的结果集记录 id（Task 6 使用）
 
     # ---------- 连接管理 ----------
     async def connect(self, ws: WebSocket):
@@ -151,6 +155,10 @@ class AgentManager:
                 if self.current_task and not self.current_task.done() and not self._run_replay:
                     await self.chat_say(agent, "实时诊断执行中不接受干预，请在复盘重跑中进行。")
                     return
+                self.objection_log.append({
+                    "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                    "kind": "user_input",
+                    "text": f"[{AGENTS[agent]['name']}] {message}"})
                 task = asyncio.create_task(self.handle_chat(agent, message))
                 self._chat_tasks.add(task)
                 task.add_done_callback(self._chat_tasks.discard)
@@ -169,7 +177,6 @@ class AgentManager:
             self.local_interventions += 1
             await self.log("commander", f"诊断策略已切换为「{name}」（全局默认）。")
             await self.send_skills()
-            await self._replay_trail(name)
         elif mtype == "reset_skills":
             await pld_client.reset_skills()
             self.local_interventions += 1
@@ -182,6 +189,17 @@ class AgentManager:
         elif mtype == "tool_confirm_response":
             tool = str(data.get("tool", ""))
             if tool in self.pending_confirms:
+                decision = data.get("decision", "ok")
+                if decision != "ok":
+                    now = datetime.datetime.now().strftime("%H:%M:%S")
+                    if decision == "override":
+                        self.objection_log.append({
+                            "time": now, "kind": "custom_data", "tool": tool,
+                            "text": f"将{tool}相关数值修正为{data.get('value')}"})
+                    else:
+                        self.objection_log.append({
+                            "time": now, "kind": "tool_objection", "tool": tool,
+                            "decision": decision, "value": data.get("value")})
                 self.confirm_decisions[tool] = {
                     "decision": data.get("decision", "ok"),
                     "value": data.get("value"),
@@ -209,32 +227,6 @@ class AgentManager:
             await self.broadcast({"type": "skills", "skills": skills, "default_skill": default})
         except Exception as exc:  # noqa: BLE001
             await self.log("commander", f"策略列表获取失败:{exc}")
-
-    async def _replay_trail(self, name: str):
-        trail = _load_trails().get(name, [])
-        if not trail:
-            return
-        await self.log("commander", f"策略「{name}」含 {len(trail)} 条干预线索，开始自动重放……")
-        for item in trail:
-            kind, tool, value, text = item.get("kind"), item.get("tool", ""), item.get("value"), item.get("text", "")
-            if kind in ("override", "time_range", "external_data"):
-                self.value_overrides[tool] = str(value)
-                cmd = f"修改报告：将{tool}相关数值修正为{value}"
-            elif kind == "report_modify":
-                cmd = text
-            else:
-                continue  # exclude/weight/recheck 由 PLD 技能承载或属一次性动作
-            try:
-                await self._wait_pld_idle()
-                async for event in pld_client.chat_stream(cmd):
-                    p = event.get("payload", {})
-                    if event.get("event_type") == "complete" and p.get("report"):
-                        self.last_report = p["report"]
-                        await self.broadcast({"type": "report", "content": p["report"], "done": True})
-            except Exception as exc:  # noqa: BLE001
-                await self.log("commander", f"线索重放失败({kind} {tool}):{exc}")
-        await self._refresh_snapshot()
-        await self.log("commander", f"策略「{name}」干预线索重放完成。")
 
     async def activate_template(self, name: str):
         if not name:
@@ -692,15 +684,18 @@ class AgentManager:
             await self.log("commander", f"策略名「{name}」已存在，重命名为「{unique}」。")
         name = unique
 
-        lines = [f"# 指挥室人工干预策略 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ""]
-        lines.append("## 工具权重")
-        for t, w in (weights or {}).items():
-            lines.append(f"- {t}: {w}")
-        lines.append("")
-        lines.append("## 排除工具")
-        for t in (excluded or []):
-            lines.append(f"- {t}")
-        content = "\n".join(lines)
+        content = strategy_builder.build_skill_markdown({
+            "name": name,
+            "line_context": self.current_line or "transmission lines",
+            "weights": weights,
+            "excluded_tools": excluded,
+            "template_name": "",
+            "report_modifications": [o["text"] for o in self.objection_log if o["kind"] == "report_modify"],
+            "commander_rules": [o["text"] for o in self.objection_log
+                                if o["kind"] in ("diagnosis_objection", "user_input")],
+            "custom_data": [o["text"] for o in self.objection_log if o["kind"] == "custom_data"],
+            "trail": list(self.intervention_trail),
+        })
 
         result = await pld_client.save_skill(name, content)
         strategy = {
