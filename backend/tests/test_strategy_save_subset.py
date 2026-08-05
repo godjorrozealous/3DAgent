@@ -102,3 +102,23 @@ async def test_prompt_only_after_replay_with_items(monkeypatch):
     prompts = [e for e in ws.events if e["type"] == "prompt_save_strategy"]
     assert len(prompts) == 1
     assert prompts[0]["items"][0]["label"] == "将LightningDiagnosisTool权重调整为0.1"
+
+
+async def test_chat_item_saved_recheck_excluded(monkeypatch):
+    """F1：勾选的 chat 干预写入司令决策规则；recheck 一次性动作不进保存清单。"""
+    mgr, saved = make_mgr(monkeypatch)
+    mgr.intervention_trail = [
+        {"kind": "chat", "tool": "LightningDiagnosisTool",
+         "value": "雷电要考虑地形", "text": "", "time": "t"},
+        {"kind": "recheck", "tool": "WindDiagnosisTool",
+         "value": None, "text": "", "time": "t"},
+    ]
+    items = mgr._intervention_items()
+    # recheck 不再出现在可保存清单中
+    assert [i["kind"] for i in items] == ["chat"]
+    assert items[0]["label"] == "LightningDiagnosisTool：雷电要考虑地形"
+    # 勾选 chat 项 → markdown 司令决策规则包含对话内容（不再静默丢失）
+    await mgr.save_strategy("chat策略", items=[0])
+    content = saved["content"]
+    assert "## 司令决策规则（必须遵循）" in content
+    assert "LightningDiagnosisTool：雷电要考虑地形" in content

@@ -170,18 +170,20 @@ class AgentManager:
                 if self.current_task and not self.current_task.done() and not self._run_replay:
                     await self.chat_say(agent, "实时诊断执行中不接受干预，请在复盘重跑中进行。")
                     return
+                if self._run_replay and agent != "commander":
+                    # 复盘中与诊断智能体对话：本地关键词路由，不直接转发 PLD
+                    # （转发会被意图分类器误判并劫持活跃会话）。
+                    # 命中时由 _replay_agent_chat 自行记录 tool_objection；
+                    # 未命中仅回固定提示，不记 user_input（无后端动作）
+                    await self._replay_agent_chat(agent, message)
+                    return
                 self.objection_log.append({
                     "time": datetime.datetime.now().strftime("%H:%M:%S"),
                     "kind": "user_input",
                     "text": f"[{AGENTS[agent]['name']}] {message}"})
-                if self._run_replay and agent != "commander":
-                    # 复盘中与诊断智能体对话：本地关键词路由，不直接转发 PLD
-                    # （转发会被意图分类器误判并劫持活跃会话）
-                    await self._replay_agent_chat(agent, message)
-                else:
-                    task = asyncio.create_task(self.handle_chat(agent, message))
-                    self._chat_tasks.add(task)
-                    task.add_done_callback(self._chat_tasks.discard)
+                task = asyncio.create_task(self.handle_chat(agent, message))
+                self._chat_tasks.add(task)
+                task.add_done_callback(self._chat_tasks.discard)
         elif mtype == "list_templates":
             await self.send_templates()
         elif mtype == "activate_template":
@@ -586,6 +588,20 @@ class AgentManager:
                     except asyncio.TimeoutError:
                         break
                     if self._review_response.get("satisfied"):
+                        outstanding = [t for t, d in self.confirm_decisions.items()
+                                       if d.get("decision") != "ok"]
+                        if outstanding:
+                            # 审核等待期内登记的对话异议不得被「满意」吞掉：
+                            # 继续循环，由顶部异议分支统一消费并整轮重跑
+                            await self.log(
+                                "commander",
+                                f"报告满意，但存在未处理的对话异议（{len(outstanding)} 项），"
+                                "按异议重新组织诊断。")
+                            continue
+                        if self.confirm_decisions:
+                            # 正常退出前兜底清理残留决策，防止跨轮泄漏/前端忙碌态悬挂
+                            self.confirm_decisions.clear()
+                            await self.broadcast({"type": "confirm_queue_clear"})
                         break
                     instruction = str(self._review_response.get("instruction", "")).strip()
                     if not instruction:
@@ -899,7 +915,6 @@ class AgentManager:
     _ITEM_LABELS = {
         "weight": lambda t: f"将{t['tool']}权重调整为{t['value']}",
         "exclude": lambda t: f"排除{t['tool']}",
-        "recheck": lambda t: f"重新检查{t['tool']}",
         "time_range": lambda t: f"重新检查{t['tool']}，查询时间段{t['value']}",
         "override": lambda t: f"将{t['tool']}相关数值修正为{t['value']}",
         "chat": lambda t: f"{t['tool']}：{t['value']}",
@@ -967,7 +982,8 @@ class AgentManager:
             "template_name": "",
             "report_modifications": [it["text"] for it in selected if it["kind"] == "report_modify"],
             "commander_rules": [it["text"] for it in selected
-                                if it["kind"] in ("diagnosis_objection", "user_input")],
+                                if it["kind"] in ("diagnosis_objection", "user_input")]
+                               + [it["label"] for it in selected if it["kind"] == "chat"],
             "custom_data": [it["label"] for it in selected if it["kind"] == "override"],
             "trail": [{"kind": it["kind"], "tool": it["tool"], "value": it["value"]}
                       for it in selected if it["kind"] in ("override", "time_range")],
