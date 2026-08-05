@@ -203,6 +203,30 @@ class AgentManager:
             await self.log("commander", "已重置为默认诊断策略。")
             await self.send_skills()
             await self._refresh_snapshot()
+        elif mtype == "list_strategies":
+            await self.send_strategies()
+        elif mtype == "delete_strategies":
+            names = [str(n) for n in data.get("names", []) if str(n).strip()]
+            try:
+                default = (await pld_client.get_default_skill()).get("default_skill", "")
+            except Exception:  # noqa: BLE001
+                default = ""
+            failed = []
+            for n in names:
+                if n == default:
+                    failed.append(n)
+                    continue
+                try:
+                    await pld_client.delete_skill(n)
+                except Exception:  # noqa: BLE001
+                    failed.append(n)
+            deleted = [n for n in names if n not in failed]
+            self.saved_strategies = [s for s in self.saved_strategies
+                                     if s.get("name") not in deleted]
+            if failed:
+                await self.log("commander",
+                               f"以下策略未删除（使用中已跳过或删除失败）：{'、'.join(failed)}")
+            await self.send_strategies()
         elif mtype == "save_prompt_response":
             if data.get("save"):
                 await self.save_strategy(str(data.get("name", "")))
@@ -268,6 +292,16 @@ class AgentManager:
             skills = (await pld_client.list_skills()).get("skills", [])
             default = (await pld_client.get_default_skill()).get("default_skill", "")
             await self.broadcast({"type": "skills", "skills": skills, "default_skill": default})
+        except Exception as exc:  # noqa: BLE001
+            await self.log("commander", f"策略列表获取失败:{exc}")
+
+    async def send_strategies(self):
+        """策略管理页数据：PLD 技能列表 + 当前默认（使用中）策略名。"""
+        try:
+            skills = (await pld_client.list_skills()).get("skills", [])
+            default = (await pld_client.get_default_skill()).get("default_skill", "")
+            await self.broadcast({"type": "strategies_list",
+                                  "strategies": skills, "default": default})
         except Exception as exc:  # noqa: BLE001
             await self.log("commander", f"策略列表获取失败:{exc}")
 

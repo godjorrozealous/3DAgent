@@ -67,6 +67,11 @@ async def save_skill(name: str, content: str) -> dict:
         return resp.json()
 
 
+async def delete_skill(name: str) -> dict:
+    async with httpx.AsyncClient(base_url=PLD_BASE, timeout=30) as c:
+        return (await c.delete(f"/api/skills/{name}")).json()
+
+
 # ---------- 策略（技能） ----------
 async def list_skills() -> dict:
     async with httpx.AsyncClient(base_url=PLD_BASE, timeout=30) as c:
