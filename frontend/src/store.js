@@ -29,6 +29,7 @@ export const store = reactive({
   defaultSkill: '',
   confirmQueue: [],      // tool_confirm_request 队列，响应后 shift
   agentSession: null,    // null | { agent, tool, fault_type, confidence, evidence, raw_text, structured_data, override, confirm: bool }
+  agentBusy: {},         // 复盘对话异议已上报、等待重诊断结果的智能体
   replayMode: false,     // run_state.mode === 'replay'
   savePrompt: null,      // null | { interventions, items, context }
   saveNaming: null,      // null | { suggested, selected? } 命名保存弹窗

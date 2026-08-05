@@ -73,7 +73,11 @@ function handle(event) {
     case 'prompt_save_strategy':
       store.savePrompt = { interventions: event.interventions, items: event.items || [], context: event.context }
       break
+    case 'objection_accepted':
+      store.agentBusy[event.agent] = true
+      break
     case 'tool_confirm_request':
+      store.agentBusy[event.agent] = false
       store.confirmQueue.push(event)
       // 不抢占已打开的会话弹窗（确认或私聊），提交后由弹窗按队列推进
       if (!store.agentSession) store.agentSession = { ...event, confirm: true }
@@ -87,6 +91,7 @@ function handle(event) {
       store.reportReviewPending = false
       store.reportReviewEmpty = false
       store.agentSession = null
+      store.agentBusy = {}
       break
     case 'run_state':
       store.replayMode = event.mode === 'replay'

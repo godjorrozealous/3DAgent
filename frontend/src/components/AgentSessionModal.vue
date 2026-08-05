@@ -13,6 +13,7 @@ const TOOL_TO_AGENT = {
 
 const session = computed(() => store.agentSession)
 const isConfirm = computed(() => !!session.value?.confirm)
+const busy = computed(() => !!store.agentBusy[agent.value])
 const agent = computed(() => {
   const s = session.value
   if (!s) return null
@@ -119,10 +120,12 @@ function submit(decision) {
 }
 
 function close() {
-  if (isConfirm.value) return
+  // 确认模式仅忙碌（异议已上报等待重跑）时允许关闭；关闭后新确认到达会自动重弹
+  if (isConfirm.value && !busy.value) return
   store.agentSession = null
-  // 私聊关闭后提升确认队列队首，避免排队确认饿死
-  if (store.confirmQueue.length) store.agentSession = { ...store.confirmQueue[0], confirm: true }
+  if (!isConfirm.value && store.confirmQueue.length) {
+    store.agentSession = { ...store.confirmQueue[0], confirm: true }
+  }
 }
 </script>
 
@@ -162,10 +165,19 @@ function close() {
           >私聊</span>
         </div>
         <button
-          v-if="!isConfirm"
+          v-if="!isConfirm || busy"
           @click="close"
           class="text-slate-400 hover:text-red-300 text-lg leading-none px-1 shrink-0"
         >×</button>
+      </div>
+
+      <!-- 异议已上报，等待司令重诊断 -->
+      <div
+        v-if="busy"
+        class="px-4 py-2 text-[11px] text-amber-200 bg-amber-500/10 border-b border-amber-400/30 shrink-0 flex items-center gap-2"
+      >
+        <span class="w-2 h-2 rounded-full bg-amber-300 animate-pulse"></span>
+        已上报司令，正在重新诊断，请等待新结果…（可关闭本窗口，结果到达后自动重新弹出）
       </div>
 
       <!-- 空结果标记 -->
@@ -229,7 +241,11 @@ function close() {
       </div>
 
       <!-- 操作区（仅确认模式） -->
-      <div v-if="isConfirm" class="border-t border-amber-400/20 bg-slate-900/60 px-3 py-2.5 space-y-2 shrink-0">
+      <div
+        v-if="isConfirm"
+        class="border-t border-amber-400/20 bg-slate-900/60 px-3 py-2.5 space-y-2 shrink-0"
+        :class="busy ? 'opacity-40 pointer-events-none' : ''"
+      >
         <div class="flex flex-wrap items-center gap-2">
           <button
             @click="submit('recheck')"
