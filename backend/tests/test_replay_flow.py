@@ -61,9 +61,9 @@ async def test_replay_emits_confirm_and_dispatches_objection(monkeypatch):
     assert len(confirms) == 2  # 首轮 + 异议重跑轮各一次
     assert confirms[0]["tool"] == "LightningDiagnosisTool"
     assert confirms[0]["fault_type"] == "雷击-绕击"
-    # 异议统一提报司令并随整轮重跑消息下发（不再逐条 chat 干预）
-    rerun = [m for m in sent[1:] if "复盘异议" in m]
-    assert rerun and "排除LightningDiagnosisTool" in rerun[0]
+    # exclude 为结构化异议：先独立命令下发，再裸诊断消息重跑
+    assert sent[1] == "排除LightningDiagnosisTool"
+    assert sent[2] == sent[0] and "复盘异议" not in sent[2]
     # 全部无异议前不得进入报告审核：审核询问只有一次（重跑确认后）
     reviews = [e for e in ws.events if e["type"] == "report_review_request"]
     assert len(reviews) == 1

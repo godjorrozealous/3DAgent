@@ -405,6 +405,12 @@ class AgentManager:
             elif etype == "complete":
                 report = payload.get("report") or report_buf
                 summary = payload.get("summary", {})
+                if not str(report or "").strip():
+                    # PLD 意图误判（重跑消息被分类为 adjust_weight 等）：空完成不算有效
+                    # 诊断轮——不覆盖上一轮有效报告/摘要，不进入逐项确认与报告审核
+                    await self.log("commander",
+                                   "⚠ 本轮诊断流未产出报告（PLD 未识别为完整诊断），保留上一轮有效结果。")
+                    return {"_invalid": True}
                 self.last_report = report
                 run_record["summary"] = summary
                 run_record["report"] = report
@@ -476,21 +482,46 @@ class AgentManager:
                                   if d["decision"] != "ok"}
                     self.confirm_decisions.clear()
                     if objections:
-                        parts = [t for t in
-                                 (self._objection_text(tool, d) for tool, d in objections.items())
-                                 if t]
-                        if parts:
-                            obj_text = "；".join(parts)
+                        structured: list[str] = []
+                        freeform: list[str] = []
+                        for tool, d in objections.items():
+                            kind, text = self._objection_command(tool, d)
+                            if not text:
+                                continue
+                            (structured if kind == "cmd" else freeform).append(text)
+                        if structured or freeform:
+                            all_text = "；".join(structured + freeform)
                             now = datetime.datetime.now().strftime("%H:%M:%S")
                             self.objection_log.append({
-                                "time": now, "kind": "diagnosis_objection", "text": obj_text})
+                                "time": now, "kind": "diagnosis_objection", "text": all_text})
                             await self.log(
                                 "commander",
-                                f"复盘异议（{len(parts)} 项）统一提报司令：{obj_text}。"
+                                f"复盘异议（{len(structured) + len(freeform)} 项）统一提报司令：{all_text}。"
                                 "结束当前诊断，按最新要求重新组织完整诊断。")
-                            summary = await self._stream_run(
-                                f"{message}\n【复盘异议，本次诊断必须采纳】{obj_text}",
-                                True, run_record)
+                            # 重跑前复位确认状态（旧队列已随本轮决策消费完毕）
+                            self.pending_confirms.clear()
+                            await self.broadcast({"type": "confirm_queue_clear"})
+                            # ① 结构化命令逐条单独下发（单一意图）；失败降级为后缀
+                            for cmd in structured:
+                                ok = True
+                                try:
+                                    async for ev in pld_client.chat_stream(cmd):
+                                        if ev.get("event_type") == "error":
+                                            ok = False
+                                except Exception:  # noqa: BLE001
+                                    ok = False
+                                if not ok:
+                                    await self.log("commander",
+                                                   f"异议命令下发失败，改为随重跑消息下发:{cmd}")
+                                    freeform.append(cmd)
+                            # ② 裸诊断消息（+自由文本后缀）整轮重跑；无异议工具命中缓存复用
+                            rerun_msg = message
+                            if freeform:
+                                rerun_msg = (f"{message}\n【复盘异议，本次诊断必须采纳】"
+                                             f"{'；'.join(freeform)}")
+                            new_summary = await self._stream_run(rerun_msg, True, run_record)
+                            if not new_summary.get("_invalid"):
+                                summary = new_summary
                             continue
                     # 全部确认无异议 → 提交报告审核
                     self._review_event = asyncio.Event()
@@ -514,8 +545,10 @@ class AgentManager:
                             "time": now, "kind": "diagnosis_objection", "text": instruction})
                         await self.log("commander",
                                        f"复盘异议（诊断流程）：{instruction}，司令收集意见后重新组织完整诊断。")
-                        summary = await self._stream_run(
+                        new_summary = await self._stream_run(
                             f"{message}\n【复盘异议，本次诊断必须采纳】{instruction}", True, run_record)
+                        if not new_summary.get("_invalid"):
+                            summary = new_summary
                         continue
                     await self.log("audit", f"按指挥员意见修改报告:{instruction}")
                     self._trail("report_modify", text=instruction)
@@ -563,26 +596,34 @@ class AgentManager:
             "time": datetime.datetime.now().strftime("%H:%M:%S"),
         })
 
-    def _objection_text(self, tool: str, d: dict) -> str:
-        """复盘确认异议 → 统一重跑指令文本；同时记录干预轨迹（供策略保存/快照）。"""
+    def _objection_command(self, tool: str, d: dict) -> tuple[str, str]:
+        """复盘异议 → ("cmd", 独立 PLD 意图命令) 或 ("suffix", 重跑消息后缀文本)。
+
+        结构化异议走独立命令（单一意图，PLD 不会误判为诊断/非诊断）；
+        自由文本/改值类拼入【复盘异议】后缀随裸诊断消息下发。
+        同时记录干预轨迹（供策略保存/快照）。
+        """
         decision, value = d["decision"], d.get("value")
         if decision == "recheck":
             self._trail("recheck", tool)
-            return f"重新检查{tool}"
+            return "cmd", f"重新检查{tool}"
         if decision == "time_range":
             self._trail("time_range", tool, value)
-            return f"重新检查{tool}，查询时间段{value}"
+            return "cmd", f"重新检查{tool}，查询时间段{value}"
         if decision == "exclude":
             self._trail("exclude", tool)
-            return f"排除{tool}"
+            return "cmd", f"排除{tool}"
         if decision == "weight":
             self._trail("weight", tool, value)
-            return f"将{tool}权重调整为{value}"
+            return "cmd", f"将{tool}权重调整为{value}"
         if decision == "override":
             self._trail("override", tool, value)
             self.value_overrides[tool] = str(value)
-            return f"将{tool}相关数值修正为{value}"
-        return ""
+            return "suffix", f"将{tool}相关数值修正为{value}"
+        if decision == "chat":
+            self._trail("chat", tool, value)
+            return "suffix", str(value or "")
+        return "", ""
 
     def _count_interventions(self, session: dict | None) -> int:
         delta = len((session or {}).get("action_log", [])) - self._action_count_at_start
