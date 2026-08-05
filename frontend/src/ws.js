@@ -71,7 +71,7 @@ function handle(event) {
       store.summaries[event.kind] = event
       break
     case 'prompt_save_strategy':
-      store.savePrompt = { interventions: event.interventions, context: event.context }
+      store.savePrompt = { interventions: event.interventions, items: event.items || [], context: event.context }
       break
     case 'tool_confirm_request':
       store.confirmQueue.push(event)
@@ -154,7 +154,8 @@ export function openSaveNaming() {
 }
 
 export function saveStrategyNamed(name) {
-  send({ type: 'save_strategy', name })
+  const items = store.saveNaming?.selected ?? null
+  send({ type: 'save_strategy', name, items })
 }
 
 export function replay() {

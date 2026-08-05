@@ -30,8 +30,8 @@ export const store = reactive({
   confirmQueue: [],      // tool_confirm_request 队列，响应后 shift
   agentSession: null,    // null | { agent, tool, fault_type, confidence, evidence, raw_text, structured_data, override, confirm: bool }
   replayMode: false,     // run_state.mode === 'replay'
-  savePrompt: null,      // null | { interventions, context }
-  saveNaming: null,      // null | { suggested: string } 命名保存弹窗
+  savePrompt: null,      // null | { interventions, items, context }
+  saveNaming: null,      // null | { suggested, selected? } 命名保存弹窗
   reportReviewPending: false,
   reportReviewEmpty: false, // 复盘报告为空标记（report_review_request.empty）
   reportModal: null,     // null | { title, content }
