@@ -60,6 +60,12 @@ DIAGNOSE_MESSAGE = "雅湖线 2025-05-08 19:46 发生跳闸，请进行故障综
 
 SESSION_CONTEXT = "【当前会话：{line}｜{tool}】"
 
+# 复盘中智能体对话的异议关键词（命中→视为该工具异议，统一提报司令整轮重跑）
+OBJECTION_KEYWORDS = (
+    "权重", "排除", "去掉", "重新检查", "重查", "复查", "重新诊断",
+    "数据", "数值", "时间段", "调整", "修正", "不对", "错误",
+)
+
 
 def parse_planned_tools(text: str) -> list[str]:
     """从「诊断计划」文本提取计划调用的工具名（去重保序）。"""
@@ -166,9 +172,14 @@ class AgentManager:
                     "time": datetime.datetime.now().strftime("%H:%M:%S"),
                     "kind": "user_input",
                     "text": f"[{AGENTS[agent]['name']}] {message}"})
-                task = asyncio.create_task(self.handle_chat(agent, message))
-                self._chat_tasks.add(task)
-                task.add_done_callback(self._chat_tasks.discard)
+                if self._run_replay and agent != "commander":
+                    # 复盘中与诊断智能体对话：本地关键词路由，不直接转发 PLD
+                    # （转发会被意图分类器误判并劫持活跃会话）
+                    await self._replay_agent_chat(agent, message)
+                else:
+                    task = asyncio.create_task(self.handle_chat(agent, message))
+                    self._chat_tasks.add(task)
+                    task.add_done_callback(self._chat_tasks.discard)
         elif mtype == "list_templates":
             await self.send_templates()
         elif mtype == "activate_template":
@@ -207,10 +218,14 @@ class AgentManager:
                         self.objection_log.append({
                             "time": now, "kind": "tool_objection", "tool": tool,
                             "decision": decision, "value": data.get("value")})
-                self.confirm_decisions[tool] = {
-                    "decision": data.get("decision", "ok"),
-                    "value": data.get("value"),
-                }
+                existing = self.confirm_decisions.get(tool)
+                if decision == "ok" and existing and existing.get("decision") != "ok":
+                    pass  # 已存在对话异议，「无异议」点击不覆盖
+                else:
+                    self.confirm_decisions[tool] = {
+                        "decision": data.get("decision", "ok"),
+                        "value": data.get("value"),
+                    }
                 del self.pending_confirms[tool]
                 if not self.pending_confirms and self._confirms_done:
                     self._confirms_done.set()
@@ -756,6 +771,21 @@ class AgentManager:
             await self.log("commander", f"诊断记录持久化失败：{exc}")
 
     # ---------- 人工直聊干预 ----------
+    async def _replay_agent_chat(self, agent: str, message: str):
+        """复盘模式工具智能体对话：关键词命中→登记 chat 异议；未命中→固定提示。"""
+        tool = TOOL_AGENTS.get(agent, agent)
+        if not any(k in message for k in OBJECTION_KEYWORDS):
+            await self.chat_say(
+                agent, "此处仅受理与本轮诊断相关的异议（数据修正、权重调整、重新检查等），"
+                       "其他事项请与司令对话。")
+            return
+        now = datetime.datetime.now().strftime("%H:%M:%S")
+        self.objection_log.append({"time": now, "kind": "tool_objection", "tool": tool,
+                                   "decision": "chat", "value": message})
+        self.confirm_decisions[tool] = {"decision": "chat", "value": message}
+        await self.chat_say(agent, "已收到，将随本轮异议统一上报司令重新诊断。")
+        await self.broadcast({"type": "objection_accepted", "agent": agent, "tool": tool})
+
     async def handle_chat(self, agent: str, message: str):
         if agent == "commander":
             # 转发给 PLDiagnosis：由真实意图分类器处理（排除/恢复/调权/复查/修改报告…）
