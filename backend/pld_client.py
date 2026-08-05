@@ -42,6 +42,13 @@ async def get_session(session_id: str) -> dict:
         return resp.json()
 
 
+async def reset_session(session_id: str) -> dict:
+    """复位卡死在 diagnosing 的 PLD 会话（诊断流中断导致状态滞留）。"""
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(f"{PLD_BASE}/api/sessions/{session_id}/reset")
+        return resp.json()
+
+
 async def get_active_session() -> dict | None:
     """取最近更新的会话作为当前会话。"""
     sessions = await list_sessions()

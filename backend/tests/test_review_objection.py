@@ -108,6 +108,10 @@ async def test_empty_result_flagged_in_confirm(monkeypatch):
         await mgr.handle_message({"type": "tool_confirm_response",
                                   "tool": "WindDiagnosisTool", "decision": "recheck"})
         await asyncio.sleep(0.2)
+        # recheck 异议触发整轮重跑：重跑再次弹出确认，本次无异议
+        await mgr.handle_message({"type": "tool_confirm_response",
+                                  "tool": "WindDiagnosisTool", "decision": "ok"})
+        await asyncio.sleep(0.2)
         await mgr.handle_message({"type": "report_review_response", "satisfied": True})
 
     await asyncio.gather(mgr.run_diagnosis(replay=True), respond())

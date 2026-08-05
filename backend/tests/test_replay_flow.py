@@ -48,16 +48,25 @@ async def test_replay_emits_confirm_and_dispatches_objection(monkeypatch):
                                   "decision": "exclude"})
         assert mgr.confirm_decisions["LightningDiagnosisTool"]["decision"] == "exclude"
         await asyncio.sleep(0.3)
-        # 异议下发后的报告审核询问:直接满意,结束审核循环
+        # 异议触发整轮重跑：重跑流再次弹出逐项确认，本次无异议
+        await mgr.handle_message({"type": "tool_confirm_response",
+                                  "tool": "LightningDiagnosisTool",
+                                  "decision": "ok"})
+        await asyncio.sleep(0.3)
+        # 全部无异议后的报告审核询问:直接满意,结束审核循环
         await mgr.handle_message({"type": "report_review_response", "satisfied": True})
 
     await asyncio.gather(mgr.run_diagnosis(replay=True), respond())
     confirms = [e for e in ws.events if e["type"] == "tool_confirm_request"]
-    assert len(confirms) == 1
+    assert len(confirms) == 2  # 首轮 + 异议重跑轮各一次
     assert confirms[0]["tool"] == "LightningDiagnosisTool"
     assert confirms[0]["fault_type"] == "雷击-绕击"
-    # 异议已下发（exclude 指令文本）
-    assert any("排除" in m for m in sent[1:])  # sent[0] 是诊断消息本身
+    # 异议统一提报司令并随整轮重跑消息下发（不再逐条 chat 干预）
+    rerun = [m for m in sent[1:] if "复盘异议" in m]
+    assert rerun and "排除LightningDiagnosisTool" in rerun[0]
+    # 全部无异议前不得进入报告审核：审核询问只有一次（重跑确认后）
+    reviews = [e for e in ws.events if e["type"] == "report_review_request"]
+    assert len(reviews) == 1
 
 
 async def test_replay_waits_for_inflight_chat(monkeypatch):
