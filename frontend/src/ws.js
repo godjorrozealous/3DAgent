@@ -3,6 +3,20 @@ import { store, pushLog, pushChat } from './store'
 let ws = null
 const listeners = new Set()
 
+// HMR 安全：模块热替换时关闭旧 socket 并清空监听器，
+// 否则旧实例的连接残留会与实例并存，所有事件被重复写入 store（日志/确认队列翻倍）
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    if (ws) {
+      ws.onclose = null
+      ws.close()
+      ws = null
+    }
+    listeners.clear()
+  })
+  import.meta.hot.accept(() => connect())
+}
+
 export function onEvent(fn) {
   listeners.add(fn)
 }
@@ -17,6 +31,9 @@ function handle(event) {
       event.agents.forEach((a) => (store.agents[a.id] = a))
       store.strategies = event.strategies || []
       store.sessionId = event.session_id
+      // 刷新/重连时恢复运行态（诊断中途刷新页面不再显示为闲置）
+      store.running = !!event.running
+      store.replayMode = event.mode === 'replay'
       break
     case 'agent_status': {
       const a = store.agents[event.agent]
@@ -103,6 +120,7 @@ function handle(event) {
 }
 
 export function connect() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
   ws = new WebSocket(`${proto}://${location.host}/ws`)
   ws.onopen = () => (store.connected = true)
@@ -147,6 +165,17 @@ export function sendChat(agent, message) {
     time: new Date().toTimeString().slice(0, 8),
   })
   send({ type: 'chat', agent, message })
+}
+
+// 快捷按钮指令回显：仅本地气泡，不转发后端/PLD。
+// 复盘确认快捷按钮的真实决策走 tool_confirm_response；若再作为 chat 转发 PLD，
+// 会被意图分类器误判为新诊断并劫持活跃会话，导致后续干预「无法调整」
+export function echoChat(agent, message) {
+  pushChat(agent, {
+    from: 'user',
+    message,
+    time: new Date().toTimeString().slice(0, 8),
+  })
 }
 
 export const listTemplates = () => send({ type: 'list_templates' })

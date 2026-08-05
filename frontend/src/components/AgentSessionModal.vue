@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch, nextTick } from 'vue'
 import { store } from '../store'
-import { sendChat, sendToolConfirm } from '../ws'
+import { sendChat, sendToolConfirm, echoChat } from '../ws'
 
 // PLD 工具名 -> 智能体席位 id（与后端 agent_manager.TOOL_TO_AGENT 一致）
 const TOOL_TO_AGENT = {
@@ -102,7 +102,8 @@ function submit(decision) {
     value = overrideValue.value.trim()
   }
   sendToolConfirm(s.tool, decision, value)
-  // spec §6：快捷按钮在对话区生成对应指令消息（sendChat 已回显用户气泡，无双气泡）
+  // spec §6：快捷按钮在对话区生成对应指令消息（仅本地回显 echoChat，不转发 PLD；
+  // 决策已由 tool_confirm_response 携带，转发会被误判新诊断并劫持活跃会话）
   const a = agent.value
   if (a) {
     const text =
@@ -112,7 +113,7 @@ function submit(decision) {
       : decision === 'weight' ? `调整权重为 ${value}`
       : decision === 'override' ? `手填数据：${value}`
       : '无异议'
-    sendChat(a, text)
+    echoChat(a, text)
   }
   advance()
 }

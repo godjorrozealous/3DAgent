@@ -16,9 +16,11 @@ watch(() => store.reportReviewPending, (pending) => {
 })
 
 function viewReport() {
+  // report_summary 在复盘完全结束(_finish_run)后才广播，审核提问时还没有；
+  // 此时完整报告已在 store.report（诊断 complete 事件推送），优先回退到它
   store.reportModal = {
     title: '复盘诊断报告',
-    content: store.summaries.replay?.report || '',
+    content: store.summaries.replay?.report || store.report || '',
   }
 }
 
