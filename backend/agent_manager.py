@@ -160,7 +160,9 @@ class AgentManager:
         elif mtype == "replay":
             await self._start_run(replay=True)
         elif mtype == "save_strategy":
-            await self.save_strategy(str(data.get("name", "")))
+            raw_items = data.get("items")
+            items = [int(i) for i in raw_items] if isinstance(raw_items, list) else None
+            await self.save_strategy(str(data.get("name", "")), items=items)
         elif mtype == "chat":
             agent = data.get("agent", "commander")
             message = str(data.get("message", "")).strip()
@@ -640,10 +642,6 @@ class AgentManager:
             return "suffix", str(value or "")
         return "", ""
 
-    def _count_interventions(self, session: dict | None) -> int:
-        delta = len((session or {}).get("action_log", [])) - self._action_count_at_start
-        return max(delta, 0) + self.local_interventions
-
     async def _mark_tools_running(self):
         """工具执行阶段：计划内席位进入 RUNNING；计划外「亮一下就灭」。"""
         planned = set(self.planned_tools)
@@ -734,13 +732,16 @@ class AgentManager:
             "planned_tools": self.planned_tools,
         })
 
-        n = self._count_interventions(session)
-        if n > 0:
-            await self.broadcast({
-                "type": "prompt_save_strategy",
-                "interventions": n,
-                "context": "replay" if replay else "realtime",
-            })
+        # 保存提示：仅复盘轮且本轮存在可保存干预项时弹出（实时轮不弹）
+        if replay:
+            items = self._intervention_items()
+            if items:
+                await self.broadcast({
+                    "type": "prompt_save_strategy",
+                    "interventions": len(items),
+                    "items": items,
+                    "context": "replay",
+                })
         # 基线滚动：下一轮只统计本轮结束后新增的干预
         self._action_count_at_start = len((session or {}).get("action_log", []))
         self.local_interventions = 0
@@ -861,18 +862,55 @@ class AgentManager:
             pass
 
     # ---------- 策略保存 ----------
-    async def save_strategy(self, name: str = ""):
-        try:
-            session = await pld_client.get_session(self.session_id) if self.session_id else None
-        except Exception as exc:  # noqa: BLE001
-            await self.log("commander", f"保存策略失败：{exc}")
-            return
-        if not session:
-            await self.log("commander", "当前无可保存的诊断会话，请先完成一轮诊断。")
+    _ITEM_LABELS = {
+        "weight": lambda t: f"将{t['tool']}权重调整为{t['value']}",
+        "exclude": lambda t: f"排除{t['tool']}",
+        "recheck": lambda t: f"重新检查{t['tool']}",
+        "time_range": lambda t: f"重新检查{t['tool']}，查询时间段{t['value']}",
+        "override": lambda t: f"将{t['tool']}相关数值修正为{t['value']}",
+        "chat": lambda t: f"{t['tool']}：{t['value']}",
+        "report_modify": lambda t: f"报告修改：{t['text']}",
+    }
+
+    def _intervention_items(self) -> list[dict]:
+        """本轮可保存干预清单（保存提示弹窗展示 + 子集选择的数据源）。"""
+        items = []
+        for t in self.intervention_trail:
+            label_fn = self._ITEM_LABELS.get(t.get("kind", ""))
+            if not label_fn:
+                continue
+            items.append({"kind": t["kind"], "tool": t.get("tool", ""),
+                          "value": t.get("value"), "text": t.get("text", ""),
+                          "label": label_fn(t)})
+        for o in self.objection_log:
+            if o.get("kind") == "diagnosis_objection":
+                items.append({"kind": "diagnosis_objection", "tool": "", "value": None,
+                              "text": o["text"], "label": f"诊断要求：{o['text']}"})
+            elif o.get("kind") == "user_input":
+                items.append({"kind": "user_input", "tool": "", "value": None,
+                              "text": o["text"], "label": f"人工指令：{o['text']}"})
+        for i, it in enumerate(items):
+            it["id"] = i
+        return items
+
+    async def save_strategy(self, name: str = "", items: list[int] | None = None):
+        all_items = self._intervention_items()
+        if items is not None:
+            selected = [all_items[i] for i in items if isinstance(i, int) and 0 <= i < len(all_items)]
+        else:
+            selected = all_items
+        if not selected:
+            await self.log("commander", "未选择任何干预项，策略未保存。")
             return
 
-        weights = session.get("active_weights", {})
-        excluded = session.get("excluded_tools", [])
+        weights = dict(strategy_builder.DEFAULT_WEIGHTS)
+        excluded: list[str] = []
+        for it in selected:
+            if it["kind"] == "weight" and it["tool"] in weights:
+                weights[it["tool"]] = it["value"]
+            elif it["kind"] == "exclude":
+                excluded.append(it["tool"])
+
         name = name.strip() or f"cmd_strategy_{datetime.datetime.now().strftime('%H%M%S')}"
         # 安全 slug：连续空白转单个下划线（中文字符保留）
         name = re.sub(r"\s+", "_", name)
@@ -893,11 +931,12 @@ class AgentManager:
             "weights": weights,
             "excluded_tools": excluded,
             "template_name": "",
-            "report_modifications": [o["text"] for o in self.objection_log if o["kind"] == "report_modify"],
-            "commander_rules": [o["text"] for o in self.objection_log
-                                if o["kind"] in ("diagnosis_objection", "user_input")],
-            "custom_data": [o["text"] for o in self.objection_log if o["kind"] == "custom_data"],
-            "trail": list(self.intervention_trail),
+            "report_modifications": [it["text"] for it in selected if it["kind"] == "report_modify"],
+            "commander_rules": [it["text"] for it in selected
+                                if it["kind"] in ("diagnosis_objection", "user_input")],
+            "custom_data": [it["label"] for it in selected if it["kind"] == "override"],
+            "trail": [{"kind": it["kind"], "tool": it["tool"], "value": it["value"]}
+                      for it in selected if it["kind"] in ("override", "time_range")],
         })
 
         result = await pld_client.save_skill(name, content)

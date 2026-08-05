@@ -78,15 +78,27 @@ SESSION_WITH_ACTIONS = {"status": "modifying", "active_weights": {},
 
 
 async def test_prompt_save_strategy_on_intervention(monkeypatch):
+    """保存提示收紧：实时轮（即使会话有动作）不弹；复盘轮存在可保存干预项时弹出并携带 items。"""
     mgr = make_manager(monkeypatch, COMPLETE_STREAM, SESSION_WITH_ACTIONS)
     ws = FakeWS()
     await mgr.connect(ws)
     ws.events.clear()
     await mgr.run_diagnosis(replay=False)
+    assert not [e for e in ws.events if e["type"] == "prompt_save_strategy"]
+    ws.events.clear()
+
+    async def respond():
+        await asyncio.sleep(0.3)
+        # 复盘进行中产生干预（trail 在每轮开跑时重置，须在轮内注入）
+        mgr._trail("weight", "LightningDiagnosisTool", 0.5)
+        await mgr.handle_message({"type": "report_review_response", "satisfied": True})
+
+    await asyncio.gather(mgr.run_diagnosis(replay=True), respond())
     prompts = [e for e in ws.events if e["type"] == "prompt_save_strategy"]
     assert len(prompts) == 1
-    assert prompts[0]["interventions"] >= 1
-    assert prompts[0]["context"] == "realtime"
+    assert prompts[0]["interventions"] == 1
+    assert prompts[0]["context"] == "replay"
+    assert prompts[0]["items"][0]["label"] == "将LightningDiagnosisTool权重调整为0.5"
 
 
 async def test_no_prompt_without_intervention(monkeypatch):

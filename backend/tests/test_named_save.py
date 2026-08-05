@@ -36,7 +36,8 @@ async def test_named_save_space_to_underscore(monkeypatch, tmp_path):
     monkeypatch.setattr(agent_manager.pld_client, "get_session", fake_session)
     mgr = agent_manager.AgentManager()
     mgr.session_id = "s1"
-    mgr.intervention_trail = []
+    mgr.intervention_trail = [{"kind": "exclude", "tool": "BirdDamageDiagnosisTool",
+                               "value": None, "text": "", "time": "t"}]
     ws = FakeWS()
     await mgr.connect(ws)
     await mgr.save_strategy("夏季 策略")
@@ -61,12 +62,15 @@ async def test_save_strategy_builds_full_skill(monkeypatch, tmp_path):
     mgr = agent_manager.AgentManager()
     mgr.session_id = "s1"
     mgr.current_line = "500kV雅湖线 跳闸"
-    mgr.intervention_trail = [{"kind": "override", "tool": "LightningDiagnosisTool",
-                               "value": "雷电流 28kA", "text": "", "time": "t"}]
+    # 新行为：排除/参数修改/报告修改均来自本轮干预清单（trail），不再拉 session 快照
+    mgr.intervention_trail = [
+        {"kind": "exclude", "tool": "BirdDamageDiagnosisTool", "value": None, "text": "", "time": "t"},
+        {"kind": "override", "tool": "LightningDiagnosisTool",
+         "value": "雷电流 28kA", "text": "", "time": "t"},
+        {"kind": "report_modify", "tool": "", "value": None, "text": "删除第三章", "time": "t"},
+    ]
     mgr.objection_log = [
-        {"kind": "report_modify", "text": "删除第三章"},
         {"kind": "diagnosis_objection", "text": "雷电诊断要考虑地形"},
-        {"kind": "custom_data", "text": "将LightningDiagnosisTool相关数值修正为雷电流 28kA"},
     ]
     ws = FakeWS()
     await mgr.connect(ws)

@@ -63,6 +63,9 @@ async def test_save_strategy_uses_last_line_after_run(monkeypatch, tmp_path):
     await mgr.connect(ws)
     await mgr.run_diagnosis(replay=False, text="500kV线路B 跳闸")
     assert mgr.current_line == ""  # 结束后已清空
+    # 新行为：无干预项不保存；补一条本轮干预后保存
+    mgr.intervention_trail = [{"kind": "weight", "tool": "LightningDiagnosisTool",
+                               "value": 0.5, "text": "", "time": "t"}]
     await mgr.save_strategy("线路B策略")
     assert "500kV线路B 跳闸" in saved["content"]
     # 兜底串 "transmission lines" 不应出现在 {line} 替换位（模板静态文案本身含该词组）
