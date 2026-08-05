@@ -20,6 +20,8 @@ export const store = reactive({
   excludedTools: [],     // 当前会话排除的工具
   plannedTools: [],      // 本轮 LLM 诊断计划调用的工具（session_snapshot.planned_tools）
   strategies: [],        // 已保存的干预策略
+  strategiesList: [],    // 策略管理页：PLD 技能列表
+  strategiesDefault: '', // 使用中（默认）策略名
   compare: null,         // 复盘对比 { baseline, replay }
   summaries: { realtime: null, replay: null }, // 双摘要 report_summary 事件体
   templates: [],

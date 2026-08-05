@@ -14,6 +14,7 @@ import SaveStrategyModal from './components/SaveStrategyModal.vue'
 import AgentSessionModal from './components/AgentSessionModal.vue'
 import ReportReviewModal from './components/ReportReviewModal.vue'
 import HistoryView from './components/HistoryView.vue'
+import StrategiesView from './components/StrategiesView.vue'
 
 const canvasHost = ref(null)
 const leftOpen = ref(true)
@@ -184,6 +185,7 @@ onMounted(() => {
 
     <!-- 历史结果集视图 -->
     <HistoryView v-if="store.view === 'history'" />
+    <StrategiesView v-if="store.view === 'strategies'" />
 
     <!-- 双击智能体弹出的直聊终端 -->
     <ChatModal />

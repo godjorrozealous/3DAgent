@@ -100,6 +100,10 @@ function handle(event) {
       store.defaultSkill = event.default_skill
       emit(event)
       break
+    case 'strategies_list':
+      store.strategiesList = event.strategies || []
+      store.strategiesDefault = event.default || ''
+      break
     case 'strategy_saved':
       store.strategies.push(event.strategy)
       break
@@ -193,7 +197,10 @@ export const respondSavePrompt = (save, name) =>
 export const cancelQueued = (index) => send({ type: 'cancel_queued', index })
 export const requestRecords = () => send({ type: 'list_records' })
 export const requestRecord = (id) => send({ type: 'get_record', id })
+export const listStrategies = () => send({ type: 'list_strategies' })
+export const deleteStrategies = (names) => send({ type: 'delete_strategies', names })
 export function setView(v) {
   store.view = v
   if (v === 'history') requestRecords()
+  if (v === 'strategies') listStrategies()
 }

@@ -1,6 +1,6 @@
 <script setup>
 import { store } from '../store'
-import { startDiagnosis, openSaveNaming, replay, cancelQueued, setView } from '../ws'
+import { startDiagnosis, replay, cancelQueued, setView } from '../ws'
 </script>
 
 <template>
@@ -31,15 +31,6 @@ import { startDiagnosis, openSaveNaming, replay, cancelQueued, setView } from '.
     </button>
 
     <button
-      :disabled="store.running || !store.connected || !store.sessionId"
-      @click="openSaveNaming"
-      class="text-xs font-bold px-3 py-1.5 rounded border border-fuchsia-400/50 text-fuchsia-200 bg-fuchsia-500/15 hover:bg-fuchsia-400/25 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-      title="将当前会话的权重/排除/异议/自定义数据保存为完整策略技能"
-    >
-      ⬇ 保存干预策略
-    </button>
-
-    <button
       :disabled="store.running || !store.connected || !store.summaries.realtime"
       @click="replay"
       class="text-xs font-bold px-3 py-1.5 rounded border border-emerald-400/50 text-emerald-200 bg-emerald-500/15 hover:bg-emerald-400/25 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
@@ -54,6 +45,14 @@ import { startDiagnosis, openSaveNaming, replay, cancelQueued, setView } from '.
       title="查看已完成的诊断结果集"
     >
       {{ store.view === 'room' ? '🗂 历史结果' : '🛖 指挥室' }}
+    </button>
+
+    <button
+      @click="setView(store.view === 'strategies' ? 'room' : 'strategies')"
+      class="text-xs font-bold px-3 py-1.5 rounded border border-fuchsia-400/50 text-fuchsia-200 bg-fuchsia-500/15 hover:bg-fuchsia-400/25 whitespace-nowrap"
+      title="管理已保存的干预策略（PLD 技能）"
+    >
+      📋 策略
     </button>
 
     <!-- 诊断队列 -->
