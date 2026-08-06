@@ -497,6 +497,7 @@ class AgentManager:
             self.objection_log = []
         run_record: dict = {"replay": replay, "time": datetime.datetime.now().strftime("%H:%M:%S")}
         summary: dict = {}
+        weights_snapshot: dict = {}  # 复盘开局会话权重快照（结束后自动还原用）
         try:
             self._run_replay = replay
             self.current_task = asyncio.current_task()
@@ -506,6 +507,14 @@ class AgentManager:
             if self._chat_tasks:
                 await asyncio.gather(*list(self._chat_tasks), return_exceptions=True)
             await self._wait_pld_idle()
+            if replay and self.session_id:
+                # 复盘开局快照当前权重：本轮权重异议仅临时生效，
+                # 结束后在 finally 中按此快照自动还原（固化只走保存策略+激活）
+                try:
+                    _sess = await pld_client.get_session(self.session_id)
+                    weights_snapshot = dict((_sess or {}).get("active_weights", {}) or {})
+                except Exception:  # noqa: BLE001
+                    weights_snapshot = {}
             if replay:
                 await self.log("commander", "【复盘】按已保存的人工干预策略重新执行诊断，验证策略是否生效。")
             else:
@@ -645,6 +654,37 @@ class AgentManager:
             if self.status["audit"] == "running":
                 await self.set_status("audit", "idle")
         finally:
+            # 复盘权重异议自动还原：重跑已按新权重生效，会话不固化修改；
+            # 持久化只通过「保存策略 + 激活」发生。须在排队下一线路前还原。
+            weight_tools = {t["tool"] for t in self.intervention_trail
+                            if t.get("kind") == "weight" and t.get("tool")}
+            if replay and weights_snapshot and weight_tools:
+                for tool in weight_tools:
+                    orig = weights_snapshot.get(tool)
+                    if orig is None:
+                        orig = strategy_builder.DEFAULT_WEIGHTS.get(tool)
+                    if orig is None:
+                        continue
+                    try:
+                        async for ev in pld_client.chat_stream(f"将{tool}权重调整为{orig}"):
+                            if ev.get("event_type") == "error":
+                                raise RuntimeError(str(ev.get("payload", "")))
+                    except Exception as exc:  # noqa: BLE001
+                        await self.log("commander", f"权重恢复失败:{tool}:{exc}")
+                await self.log("commander",
+                               "复盘结束，已将本轮调整的权重恢复为调整前数值"
+                               "（权重修改仅随保存的策略生效）。")
+                # 还原后刷新 HUD 快照，前端当前权重立即回到调整前
+                try:
+                    _sess = await pld_client.get_session(self.session_id)
+                    await self.broadcast({
+                        "type": "session_snapshot",
+                        "session_id": self.session_id,
+                        "weights": (_sess or {}).get("active_weights", weights_snapshot),
+                        "excluded_tools": (_sess or {}).get("excluded_tools", []),
+                    })
+                except Exception:  # noqa: BLE001
+                    pass
             self._run_replay = False
             await self.broadcast({"type": "run_state", "mode": None})
             if self.diagnosis_queue:
