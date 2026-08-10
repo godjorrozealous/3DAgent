@@ -20,7 +20,7 @@ SESSION = {"status": "modifying", "active_weights": {}, "excluded_tools": [], "a
 
 
 def make_mgr(monkeypatch, sent):
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         sent.append(msg)
         for e in RESULT_STREAM:
             yield e
@@ -76,7 +76,7 @@ async def test_replay_waits_for_inflight_chat(monkeypatch):
     async def blocking_chat(agent, message):
         await chat_gate.wait()
 
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         started.append("diagnosis started")
         yield {"event_type": "start", "payload": {}, "session_id": "s1"}
 

@@ -90,7 +90,7 @@ async def test_objection_log_records_confirm_and_chat(monkeypatch, tmp_path):
     mgr = agent_manager.AgentManager()
     mgr.session_id = "s1"
 
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         yield {"event_type": "complete", "payload": {"report": "r", "summary": {}}, "session_id": "s1"}
 
     monkeypatch.setattr(agent_manager.pld_client, "chat_stream", fake_stream)

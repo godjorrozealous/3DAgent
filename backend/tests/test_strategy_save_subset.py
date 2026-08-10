@@ -71,7 +71,7 @@ async def test_prompt_only_after_replay_with_items(monkeypatch):
     """实时轮不弹保存提示；复盘轮带 items 列表。"""
     calls = []
 
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         calls.append(msg)
         yield {"event_type": "complete", "payload": {
             "report": "# 报告", "summary": {"fault_type": "雷击", "confidence": 0.9}},

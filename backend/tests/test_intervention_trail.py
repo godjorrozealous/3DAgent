@@ -6,7 +6,7 @@ SESSION = {"status": "modifying", "active_weights": {}, "excluded_tools": [],
                           {"action_type": "exclude", "tool_name": "X"}]}
 
 async def test_report_summary_action_log_is_delta(monkeypatch):
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         yield {"event_type": "complete", "payload": {"report": "r", "summary": {}}, "session_id": "s1"}
     async def fake_session(sid):
         return SESSION

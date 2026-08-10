@@ -4,7 +4,7 @@ from tests.test_agent_manager import FakeWS
 
 async def test_chat_rejected_during_realtime_run(monkeypatch):
     gate = asyncio.Event()
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         yield {"event_type": "start", "payload": {}, "session_id": "s1"}
         await gate.wait()
         yield {"event_type": "complete", "payload": {"report": "r", "summary": {}}, "session_id": "s1"}

@@ -19,7 +19,7 @@ SESSION = {"status": "modifying", "active_weights": {}, "excluded_tools": [], "a
 def make_mgr(monkeypatch, calls, streams):
     iters = [iter(s) for s in streams]
 
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         calls.append(msg)
         for e in iters.pop(0):
             yield e

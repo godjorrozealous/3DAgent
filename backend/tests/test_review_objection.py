@@ -18,7 +18,7 @@ SESSION = {"status": "modifying", "active_weights": {}, "excluded_tools": [], "a
 
 
 def make_mgr(monkeypatch, calls):
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         calls.append(msg)
         yield {"event_type": "start", "payload": {}, "session_id": "s1"}
         yield RESULT_OK
@@ -88,7 +88,7 @@ async def test_report_objection_only_modifies_report(monkeypatch):
 
 
 async def test_empty_result_flagged_in_confirm(monkeypatch):
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         yield {"event_type": "start", "payload": {}, "session_id": "s1"}
         yield RESULT_EMPTY
         yield COMPLETE

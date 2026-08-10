@@ -3,7 +3,7 @@ from tests.test_agent_manager import FakeWS
 from tests.test_replay_flow import RESULT_STREAM, SESSION
 
 async def test_confirm_request_carries_full_payload(monkeypatch):
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         for e in RESULT_STREAM:
             yield e
     async def fake_session(sid):
@@ -27,7 +27,7 @@ async def test_confirm_request_carries_full_payload(monkeypatch):
 
 async def test_subagent_chat_forwarded_with_context_prefix(monkeypatch):
     sent = []
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         sent.append(msg)
         yield {"event_type": "complete", "payload": {"message": "收到"}, "session_id": "s1"}
     async def fake_session(sid):

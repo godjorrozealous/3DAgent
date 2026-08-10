@@ -13,7 +13,7 @@ SESSION = {"status": "modifying", "active_weights": {}, "excluded_tools": [], "a
 
 
 def make_mgr(monkeypatch, calls, gate):
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         calls.append(msg)
         if len(calls) == 1:
             await gate.wait()  # 第一轮诊断挂起，模拟执行中
@@ -85,7 +85,7 @@ async def test_replay_end_drains_queue(monkeypatch):
     """回归：复盘运行中入队的实时诊断，复盘结束后应自动开始（此前 finally 跳过排空导致滞留）。"""
     calls = []
 
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         calls.append(msg)
         for e in REPLAY_STREAM:
             yield e

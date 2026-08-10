@@ -379,7 +379,8 @@ class AgentManager:
                 await self.log("commander", "PLD 会话正在执行上一轮重诊断，等待其完成后再发起复盘……")
             await asyncio.sleep(3)
 
-    async def _stream_run(self, message: str, replay: bool, run_record: dict) -> dict:
+    async def _stream_run(self, message: str, replay: bool, run_record: dict,
+                          *, session_id: str | None = None) -> dict:
         """执行一轮 PLD 诊断流：转发事件、更新席位、复盘中收集逐项确认并下发异议。
 
         返回 complete 事件的 summary；PLD 报错抛 RuntimeError 由调用方捕获。
@@ -389,7 +390,10 @@ class AgentManager:
         tools_started = False
         tools_done: set[str] = set()
         started_logged = False
-        async for event in pld_client.chat_stream(message):
+        stream_kwargs: dict = {}
+        if session_id:
+            stream_kwargs["session_id"] = session_id
+        async for event in pld_client.chat_stream(message, **stream_kwargs):
             etype = event.get("event_type")
             payload = event.get("payload", {})
             sid = event.get("session_id")
@@ -567,7 +571,7 @@ class AgentManager:
                             for cmd in structured:
                                 ok = True
                                 try:
-                                    async for ev in pld_client.chat_stream(cmd):
+                                    async for ev in pld_client.chat_stream(cmd, defer_rediagnose=True):
                                         if ev.get("event_type") == "error":
                                             ok = False
                                 except Exception:  # noqa: BLE001
@@ -581,7 +585,8 @@ class AgentManager:
                             if freeform:
                                 rerun_msg = (f"{message}\n【复盘异议，本次诊断必须采纳】"
                                              f"{'；'.join(freeform)}")
-                            new_summary = await self._stream_run(rerun_msg, True, run_record)
+                            new_summary = await self._stream_run(rerun_msg, True, run_record,
+                                                                 session_id=self.session_id)
                             if not new_summary.get("_invalid"):
                                 summary = new_summary
                             continue
@@ -622,7 +627,8 @@ class AgentManager:
                         await self.log("commander",
                                        f"复盘异议（诊断流程）：{instruction}，司令收集意见后重新组织完整诊断。")
                         new_summary = await self._stream_run(
-                            f"{message}\n【复盘异议，本次诊断必须采纳】{instruction}", True, run_record)
+                            f"{message}\n【复盘异议，本次诊断必须采纳】{instruction}", True, run_record,
+                            session_id=self.session_id)
                         if not new_summary.get("_invalid"):
                             summary = new_summary
                         continue
@@ -666,7 +672,8 @@ class AgentManager:
                     if orig is None:
                         continue
                     try:
-                        async for ev in pld_client.chat_stream(f"将{tool}权重调整为{orig}"):
+                        async for ev in pld_client.chat_stream(f"将{tool}权重调整为{orig}",
+                                                               defer_rediagnose=True):
                             if ev.get("event_type") == "error":
                                 raise RuntimeError(str(ev.get("payload", "")))
                     except Exception as exc:  # noqa: BLE001

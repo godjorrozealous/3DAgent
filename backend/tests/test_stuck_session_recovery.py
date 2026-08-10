@@ -22,7 +22,7 @@ async def test_stuck_pld_session_auto_reset_and_retry(monkeypatch):
     streams = [iter(ERROR_STREAM), iter(OK_STREAM)]
     resets = []
 
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         for e in streams.pop(0):
             yield e
 
@@ -52,7 +52,7 @@ async def test_other_pld_errors_do_not_retry(monkeypatch):
     """非卡死类错误不重试、不复位，直接落入错误态。"""
     resets = []
 
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         for e in ERROR_STREAM[:1]:
             yield e
         yield {"event_type": "error", "payload": {"message": "LLM 服务不可用"},

@@ -23,7 +23,7 @@ SESSION = {"status": "modifying",
 def make_mgr(monkeypatch, calls, streams, session=SESSION):
     iters = [iter(s) for s in streams]
 
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         calls.append(msg)
         for e in iters.pop(0):
             yield e

@@ -14,7 +14,7 @@ SESSION = {"status": "modifying", "active_weights": {"LightningDiagnosisTool": 1
 
 
 def make_mgr(monkeypatch, calls):
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         calls.append(msg)
         for e in COMPLETE_STREAM:
             yield e

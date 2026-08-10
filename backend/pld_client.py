@@ -9,14 +9,21 @@ PLD_BASE = "http://localhost:5000"
 _timeout = httpx.Timeout(connect=10, read=600, write=30, pool=10)
 
 
-async def chat_stream(message: str) -> AsyncIterator[dict]:
+async def chat_stream(message: str, *, session_id: str | None = None,
+                      defer_rediagnose: bool = False) -> AsyncIterator[dict]:
     """调用 PLDiagnosis /chat，逐条产出 SSE 事件 dict。
 
     事件结构: {"event_type": start|thinking|content|status|complete|error, "payload": {...}, "session_id": ...}
+    session_id / defer_rediagnose 为复盘编排通道参数，缺省不携带。
     """
+    body: dict = {"message": message}
+    if session_id:
+        body["session_id"] = session_id
+    if defer_rediagnose:
+        body["defer_rediagnose"] = True
     async with httpx.AsyncClient(timeout=_timeout) as client:
         async with client.stream(
-            "POST", f"{PLD_BASE}/chat", json={"message": message}
+            "POST", f"{PLD_BASE}/chat", json=body
         ) as resp:
             async for line in resp.aiter_lines():
                 line = line.strip()

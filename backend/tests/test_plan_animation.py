@@ -19,7 +19,7 @@ async def test_skipped_agents_blink_and_planned_run(monkeypatch):
         {"event_type": "complete", "payload": {"report": "r", "summary": {}}, "session_id": "s1"},
     ]
     monkeypatch.setattr(agent_manager, "DIAGNOSE_MESSAGE", "x")
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         for e in stream:
             yield e
     async def fake_session(sid):
@@ -53,7 +53,7 @@ async def test_planned_tools_reset_between_runs(monkeypatch):
         {"event_type": "thinking", "payload": {"message": "执行诊断工具..."}, "session_id": "s1"},
     ]
     monkeypatch.setattr(agent_manager, "DIAGNOSE_MESSAGE", "x")
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         for e in stream:
             yield e
     async def fake_session(sid):

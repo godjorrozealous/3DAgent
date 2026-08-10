@@ -17,7 +17,7 @@ class FakeWS:
 
 
 def make_manager(monkeypatch, stream_events, session):
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         for e in stream_events:
             yield e
 
@@ -120,7 +120,7 @@ async def test_skill_and_template_messages(monkeypatch):
     mgr = make_manager(monkeypatch, COMPLETE_STREAM, SESSION)
     calls = []
 
-    async def fake_stream(msg):
+    async def fake_stream(msg, **kwargs):
         calls.append(msg)
         yield {"event_type": "complete", "payload": {"report": "r", "summary": {}}, "session_id": "s1"}
 
