@@ -874,6 +874,10 @@ class AgentManager:
         self.objection_log.append({"time": now, "kind": "tool_objection", "tool": tool,
                                    "decision": "chat", "value": message})
         self.confirm_decisions[tool] = {"decision": "chat", "value": message}
+        # 对话异议即视为该工具的确认：释放确认等待，确认轮可正常完成进入整轮重跑
+        self.pending_confirms.pop(tool, None)
+        if not self.pending_confirms and self._confirms_done:
+            self._confirms_done.set()
         await self.chat_say(agent, "已收到，将随本轮异议统一上报司令重新诊断。")
         await self.broadcast({"type": "objection_accepted", "agent": agent, "tool": tool})
 

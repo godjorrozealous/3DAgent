@@ -80,7 +80,9 @@ const canWeight = computed(() => weightValue.value !== null && weightValue.value
 const canOverride = computed(() => !!overrideValue.value.trim())
 
 function advance() {
-  store.confirmQueue.shift()
+  // 按当前工具从队列移除（对话异议可能已将其移除，不能盲 shift 误删下一个）
+  const i = store.confirmQueue.findIndex((e) => e.tool === session.value?.tool)
+  if (i >= 0) store.confirmQueue.splice(i, 1)
   store.agentSession = store.confirmQueue.length
     ? { ...store.confirmQueue[0], confirm: true }
     : null
@@ -120,12 +122,13 @@ function submit(decision) {
 }
 
 function close() {
-  // 确认模式仅忙碌（异议已上报等待重跑）时允许关闭；关闭后新确认到达会自动重弹
+  // 确认模式仅忙碌（异议已上报等待重跑）时允许关闭；
+  // 关闭后若队列还有待确认项则推进到下一个（busy 关闭时本工具已被 objection_accepted 移除），
+  // 否则关闭等待新结果到达自动重弹
   if (isConfirm.value && !busy.value) return
-  store.agentSession = null
-  if (!isConfirm.value && store.confirmQueue.length) {
-    store.agentSession = { ...store.confirmQueue[0], confirm: true }
-  }
+  store.agentSession = store.confirmQueue.length
+    ? { ...store.confirmQueue[0], confirm: true }
+    : null
 }
 </script>
 

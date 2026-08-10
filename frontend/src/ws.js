@@ -75,6 +75,13 @@ function handle(event) {
       break
     case 'objection_accepted':
       store.agentBusy[event.agent] = true
+      // 对话异议视为该工具已确认：从确认队列移除，弹窗关闭/提交后推进到下一个
+      {
+        const i = store.confirmQueue.findIndex(
+          (e) => e.agent === event.agent || e.tool === event.tool
+        )
+        if (i >= 0) store.confirmQueue.splice(i, 1)
+      }
       break
     case 'tool_confirm_request':
       store.agentBusy[event.agent] = false

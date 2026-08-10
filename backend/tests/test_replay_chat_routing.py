@@ -165,3 +165,33 @@ async def test_review_satisfied_without_objection_breaks_normally(monkeypatch):
     await asyncio.gather(mgr.run_diagnosis(replay=True), respond())
     assert len(calls) == 1          # 无额外重跑
     assert mgr.confirm_decisions == {}
+
+
+async def test_chat_objection_releases_pending_confirm(monkeypatch):
+    """对话异议即视为该工具的确认：释放 pending_confirms，全部释放后确认轮完成。"""
+    calls = []
+    mgr = make_mgr(monkeypatch, calls)
+    ws = FakeWS()
+    await mgr.connect(ws)
+    mgr.pending_confirms["LightningDiagnosisTool"] = {"tool": "LightningDiagnosisTool"}
+    mgr._confirms_done = asyncio.Event()
+    await mgr.handle_message({"type": "chat", "agent": "lightning",
+                              "message": "把权重调整为0.1"})
+    assert "LightningDiagnosisTool" not in mgr.pending_confirms
+    assert mgr._confirms_done.is_set()
+
+
+async def test_chat_objection_releases_only_that_tool(monkeypatch):
+    """多工具待确认时，对话异议只释放本工具，确认轮不提前完成。"""
+    calls = []
+    mgr = make_mgr(monkeypatch, calls)
+    ws = FakeWS()
+    await mgr.connect(ws)
+    mgr.pending_confirms["LightningDiagnosisTool"] = {"tool": "LightningDiagnosisTool"}
+    mgr.pending_confirms["WindDiagnosisTool"] = {"tool": "WindDiagnosisTool"}
+    mgr._confirms_done = asyncio.Event()
+    await mgr.handle_message({"type": "chat", "agent": "lightning",
+                              "message": "把权重调整为0.1"})
+    assert "LightningDiagnosisTool" not in mgr.pending_confirms
+    assert "WindDiagnosisTool" in mgr.pending_confirms
+    assert not mgr._confirms_done.is_set()
