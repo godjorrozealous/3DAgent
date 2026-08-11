@@ -107,3 +107,36 @@
 6. `save_strategy` items 子集 → markdown 只含选中干预
 7. 删除策略 → PLD DELETE + 广播新列表
 8. 41+ 既有测试保持通过
+
+## 7. 缺陷修复追加（2026-08-06）
+
+复测暴露的两个缺陷、根因与修复方案（均已落地）：
+
+### 7.1 复盘权重异议不得固化到 PLD 会话
+
+**现象**：复盘中将 Lightning 权重调为 0.1，复盘结束后该修改仍留在 PLD 会话 `active_weights` 中，影响后续所有诊断。
+
+**根因**：PLD `AdjustWeightCommand`（`adjust_weight.py:46`）调用 `session_manager.update_weights` 把权重**持久化到长生命周期会话**（按 line_name 复用）。异议统一重跑 v1/v2 只下发调整命令，从未还原——权重修改本只应随「保存策略 + 激活」生效。
+
+**修复**（backend commit `0e9831f`，`agent_manager.py`）：
+- 复盘开局快照会话 `active_weights`
+- 本轮有 weight 类异议时，在 `finally` 中（排队下一线路**之前**）按快照逐工具下发恢复命令；快照缺失时回退 `strategy_builder.DEFAULT_WEIGHTS`
+- 恢复后广播日志「已将本轮调整的权重恢复为调整前数值」+ 刷新 `session_snapshot`（HUD 立即回到调整前）
+- 持久化路径不变：只有「保存策略 → 激活」能真正改会话权重
+
+测试：`backend/tests/test_weight_restore.py`（重跑生效 + 结束后还原 + 无权重异议不下发恢复命令）。
+
+### 7.2 面板摘要与报告结论不一致 → 摘要改由 LLM 结论块产出
+
+**现象**：报告正文结论为「风偏放电，加权置信度 0.360」，右侧面板摘要却显示「雷击-绕击 0.98」。
+
+**根因**：报告与摘要是两条产出路径——报告正文由 LLM 按 skill 规则加权计算后撰写；而 `summary` 由代码 `_extract_summary()`（`report_composer.py:236`）对工具原始置信度做 **argmax（不做加权）** 得出。两者结论天然可能背离（0.360 = 0.45×0.8 风偏加权 vs 0.985 雷击原始）。
+
+**关键设计决策（用户裁定）**：摘要不得用任何代码硬编码加权逻辑——「它应该就是报告正文的摘要，两者共用 LLM 的产出逻辑；如果硬编码，将来策略里用户把权重去掉了怎么办」。加权规则本就定义在 skill 中，代码重算会在 skill 变更时失真。
+
+**修复**（vendor PLD commit `9d4033c`，`report_composer.py`）：
+- prompt 格式要求新增第 6 条：报告末尾输出 ```` ```conclusion ```` JSON 块 `{"fault_type", "confidence"(0-1), "primary_tool"}`，须与「诊断结论」章节最终结论一致
+- `compose()` 新增 `_split_conclusion()`：解析该块作为 `summary`，并从报告文本中剥离；置信度 >1 按百分数归一化（÷100），保留 3 位小数
+- 块缺失或解析失败：告警并回退原 `_extract_summary` argmax 逻辑（策略去掉权重等场景不崩）
+
+测试：`vendor/diagnosis-agent/tests/unit/test_report_composer.py::TestConclusionBlock`（结论块优先/百分数归一化/缺失回退/非法 JSON 回退/prompt 含要求）。
