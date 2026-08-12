@@ -12,8 +12,12 @@ def make_mgr(monkeypatch):
     async def fake_session(sid):
         return SESSION
 
+    async def fake_classify(message, session_id=None):
+        return {"intent_type": "general", "confidence": 1.0, "parameters": {}}
+
     monkeypatch.setattr(agent_manager.pld_client, "chat_stream", fake_stream)
     monkeypatch.setattr(agent_manager.pld_client, "get_session", fake_session)
+    monkeypatch.setattr(agent_manager.pld_client, "classify", fake_classify)
     mgr = agent_manager.AgentManager()
     mgr.session_id = "s1"
     mgr._run_replay = True

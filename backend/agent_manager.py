@@ -60,8 +60,6 @@ DIAGNOSE_MESSAGE = "雅湖线 2025-05-08 19:46 发生跳闸，请进行故障综
 
 SESSION_CONTEXT = "【当前会话：{line}｜{tool}】"
 
-# 复盘中智能体对话的异议关键词已移除：改由 PLD /api/classify 语义路由(Task 4 全量映射)
-
 
 def parse_planned_tools(text: str) -> list[str]:
     """从「诊断计划」文本提取计划调用的工具名（去重保序）。"""
@@ -741,6 +739,9 @@ class AgentManager:
             self._trail("override", tool, value)
             self.value_overrides[tool] = str(value)
             return "suffix", f"将{tool}相关数值修正为{value}"
+        if decision == "report_modify":
+            self._trail("report_modify", text=str(value))
+            return "suffix", f"修改报告:{value}"
         if decision == "chat":
             self._trail("chat_override", tool, value)
             self.value_overrides[tool] = str(value)
@@ -881,23 +882,54 @@ class AgentManager:
 
     # ---------- 人工直聊干预 ----------
     async def _replay_agent_chat(self, agent: str, message: str):
-        """复盘模式工具智能体对话:PLD /api/classify 语义路由(本步:general 兜底数据修正)。"""
+        """复盘模式工具智能体对话:PLD /api/classify(零副作用)语义路由。
+
+        adjust_weight/recheck/exclude → 结构化异议;modify_report → 报告修改异议;
+        general 及其他 → 数据修正(在智能体对话框发言,语境即针对该工具数据);
+        分类失败 → 同 general 兜底,链路不中断。
+        """
         tool = TOOL_AGENTS.get(agent, agent)
         try:
-            await pld_client.classify(message, session_id=self.session_id)
+            resp = await pld_client.classify(message, session_id=self.session_id)
+            itype = str(resp.get("intent_type", "general"))
+            params = resp.get("parameters") or {}
         except Exception:  # noqa: BLE001
-            pass  # 分类不可用不阻断:按数据修正兜底
+            itype, params = "general", {}
+        target = str(params.get("tool_name") or "")
+        if target not in TOOL_TO_AGENT:
+            target = tool
+        decision: str
+        value = None
+        if itype == "adjust_weight" and params.get("weight") is not None:
+            decision, value = "weight", params.get("weight")
+        elif itype == "recheck_tool":
+            decision = "recheck"
+        elif itype == "exclude_tool":
+            decision = "exclude"
+        elif itype == "modify_report":
+            decision, value = "report_modify", message
+        elif itype in ("complete", "save_strategy", "load_strategy",
+                       "list_sessions", "switch_session", "include_tool"):
+            await self.chat_say(
+                agent, "复盘对话中请使用界面按钮完成该操作"
+                       "(权重/排除/复查/数据修正/报告修改可直接告知我)。")
+            return
+        else:  # general / diagnose / 未识别 → 数据修正
+            decision, value = "chat", message
         now = datetime.datetime.now().strftime("%H:%M:%S")
-        self.objection_log.append({"time": now, "kind": "tool_objection", "tool": tool,
-                                   "decision": "chat", "value": message})
-        self.confirm_decisions[tool] = {"decision": "chat", "value": message}
-        self.value_overrides[tool] = message
-        self.ok_tools.discard(tool)
-        self.pending_confirms.pop(tool, None)
+        self.objection_log.append({"time": now, "kind": "tool_objection", "tool": target,
+                                   "decision": decision, "value": value})
+        self.confirm_decisions[target] = {"decision": decision, "value": value}
+        if decision == "chat":
+            # 数据修正:用户陈述即权威数据,随快照/确认事件下发显示
+            self.value_overrides[target] = message
+        self.ok_tools.discard(target)
+        # 对话异议即视为该工具的确认:释放确认等待,确认轮可正常完成进入整轮重跑
+        self.pending_confirms.pop(target, None)
         if not self.pending_confirms and self._confirms_done:
             self._confirms_done.set()
         await self.chat_say(agent, "已收到，将随本轮异议统一上报司令重新诊断。")
-        await self.broadcast({"type": "objection_accepted", "agent": agent, "tool": tool})
+        await self.broadcast({"type": "objection_accepted", "agent": agent, "tool": target})
 
     async def handle_chat(self, agent: str, message: str):
         if agent == "commander":
