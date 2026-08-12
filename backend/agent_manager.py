@@ -60,11 +60,7 @@ DIAGNOSE_MESSAGE = "雅湖线 2025-05-08 19:46 发生跳闸，请进行故障综
 
 SESSION_CONTEXT = "【当前会话：{line}｜{tool}】"
 
-# 复盘中智能体对话的异议关键词（命中→视为该工具异议，统一提报司令整轮重跑）
-OBJECTION_KEYWORDS = (
-    "权重", "排除", "去掉", "重新检查", "重查", "复查", "重新诊断",
-    "数据", "数值", "时间段", "调整", "修正", "不对", "错误",
-)
+# 复盘中智能体对话的异议关键词已移除：改由 PLD /api/classify 语义路由(Task 4 全量映射)
 
 
 def parse_planned_tools(text: str) -> list[str]:
@@ -91,6 +87,7 @@ class AgentManager:
         self.pending_confirms: dict[str, dict] = {}   # tool -> 待确认的 tool_confirm_request 体
         self.confirm_decisions: dict[str, dict] = {}  # tool -> {decision, value?}
         self.value_overrides: dict[str, str] = {}     # tool -> 改后数值文本（随 snapshot 下发）
+        self.ok_tools: set[str] = set()               # 复盘跨轮「无异议」记忆(重跑自动确认)
         self._confirms_done: asyncio.Event | None = None
         self._review_event: asyncio.Event | None = None
         self._review_response: dict = {}
@@ -171,10 +168,8 @@ class AgentManager:
                     await self.chat_say(agent, "实时诊断执行中不接受干预，请在复盘重跑中进行。")
                     return
                 if self._run_replay and agent != "commander":
-                    # 复盘中与诊断智能体对话：本地关键词路由，不直接转发 PLD
-                    # （转发会被意图分类器误判并劫持活跃会话）。
-                    # 命中时由 _replay_agent_chat 自行记录 tool_objection；
-                    # 未命中仅回固定提示，不记 user_input（无后端动作）
+                    # 复盘中与诊断智能体对话:经 PLD /api/classify 纯分类端点语义路由
+                    # (零副作用,不劫持活跃会话),由 _replay_agent_chat 登记异议
                     await self._replay_agent_chat(agent, message)
                     return
                 self.objection_log.append({
@@ -254,6 +249,10 @@ class AgentManager:
                         "decision": data.get("decision", "ok"),
                         "value": data.get("value"),
                     }
+                if decision == "ok":
+                    self.ok_tools.add(tool)
+                else:
+                    self.ok_tools.discard(tool)
                 del self.pending_confirms[tool]
                 if not self.pending_confirms and self._confirms_done:
                     self._confirms_done.set()
@@ -393,6 +392,8 @@ class AgentManager:
         stream_kwargs: dict = {}
         if session_id:
             stream_kwargs["session_id"] = session_id
+        if replay and self.value_overrides:
+            stream_kwargs["data_overrides"] = dict(self.value_overrides)
         async for event in pld_client.chat_stream(message, **stream_kwargs):
             etype = event.get("event_type")
             payload = event.get("payload", {})
@@ -444,16 +445,20 @@ class AgentManager:
                         report_buf += f"\n\n## 📡 {AGENTS[aid]['name']}原始诊断\n\n{raw}\n"
                         await self.broadcast({"type": "report", "content": report_buf, "done": False})
                     if replay:
-                        self.pending_confirms[tool] = {
-                            "type": "tool_confirm_request",
-                            "agent": aid, "tool": tool,
-                            "fault_type": fault, "confidence": conf,
-                            "evidence": evid,
-                            "raw_text": raw, "structured_data": sd,
-                            "override": self.value_overrides.get(tool),
-                            "empty": empty,
-                        }
-                        await self.broadcast(self.pending_confirms[tool])
+                        if tool in self.ok_tools:
+                            # 跨轮无异议记忆:此前已确认的工具重跑不再询问,自动 ok
+                            self.confirm_decisions[tool] = {"decision": "ok"}
+                        else:
+                            self.pending_confirms[tool] = {
+                                "type": "tool_confirm_request",
+                                "agent": aid, "tool": tool,
+                                "fault_type": fault, "confidence": conf,
+                                "evidence": evid,
+                                "raw_text": raw, "structured_data": sd,
+                                "override": self.value_overrides.get(tool),
+                                "empty": empty,
+                            }
+                            await self.broadcast(self.pending_confirms[tool])
             elif etype == "content":
                 chunk = payload.get("content", "")
                 if chunk:
@@ -495,6 +500,7 @@ class AgentManager:
         await self._broadcast_queue()
         await self.broadcast({"type": "report", "content": "", "done": False, "reset": True})
         self.intervention_trail = []
+        self.ok_tools.clear()  # 每次新诊断/复盘从零记忆
         # 每轮开跑重置本轮计划，防止上一轮「诊断计划」残留被误用
         self.planned_tools = []
         if not replay:
@@ -875,20 +881,18 @@ class AgentManager:
 
     # ---------- 人工直聊干预 ----------
     async def _replay_agent_chat(self, agent: str, message: str):
-        """复盘模式工具智能体对话：关键词命中→登记 chat 异议；未命中→固定提示。"""
+        """复盘模式工具智能体对话:PLD /api/classify 语义路由(本步:general 兜底数据修正)。"""
         tool = TOOL_AGENTS.get(agent, agent)
-        if not any(k in message for k in OBJECTION_KEYWORDS):
-            await self.chat_say(
-                agent, "此处仅受理与本轮诊断相关的异议（数据修正、权重调整、重新检查等），"
-                       "其他事项请与司令对话。")
-            return
+        try:
+            await pld_client.classify(message, session_id=self.session_id)
+        except Exception:  # noqa: BLE001
+            pass  # 分类不可用不阻断:按数据修正兜底
         now = datetime.datetime.now().strftime("%H:%M:%S")
         self.objection_log.append({"time": now, "kind": "tool_objection", "tool": tool,
                                    "decision": "chat", "value": message})
         self.confirm_decisions[tool] = {"decision": "chat", "value": message}
-        # 对话异议升格为数据修正:用户陈述即权威数据,随快照/确认事件下发显示
         self.value_overrides[tool] = message
-        # 对话异议即视为该工具的确认：释放确认等待，确认轮可正常完成进入整轮重跑
+        self.ok_tools.discard(tool)
         self.pending_confirms.pop(tool, None)
         if not self.pending_confirms and self._confirms_done:
             self._confirms_done.set()

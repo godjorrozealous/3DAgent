@@ -10,7 +10,8 @@ _timeout = httpx.Timeout(connect=10, read=600, write=30, pool=10)
 
 
 async def chat_stream(message: str, *, session_id: str | None = None,
-                      defer_rediagnose: bool = False) -> AsyncIterator[dict]:
+                      defer_rediagnose: bool = False,
+                      data_overrides: dict | None = None) -> AsyncIterator[dict]:
     """调用 PLDiagnosis /chat，逐条产出 SSE 事件 dict。
 
     事件结构: {"event_type": start|thinking|content|status|complete|error, "payload": {...}, "session_id": ...}
@@ -21,6 +22,8 @@ async def chat_stream(message: str, *, session_id: str | None = None,
         body["session_id"] = session_id
     if defer_rediagnose:
         body["defer_rediagnose"] = True
+    if data_overrides:
+        body["data_overrides"] = data_overrides
     async with httpx.AsyncClient(timeout=_timeout) as client:
         async with client.stream(
             "POST", f"{PLD_BASE}/chat", json=body
@@ -120,3 +123,14 @@ async def activate_template(name: str) -> dict:
 async def delete_template(name: str) -> dict:
     async with httpx.AsyncClient(base_url=PLD_BASE, timeout=30) as c:
         return (await c.delete(f"/api/templates/{name}")).json()
+
+
+async def classify(message: str, session_id: str | None = None) -> dict:
+    """调用 PLD /api/classify 纯意图分类(零副作用)。"""
+    body: dict = {"message": message}
+    if session_id:
+        body["session_id"] = session_id
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(f"{PLD_BASE}/api/classify", json=body)
+        resp.raise_for_status()
+        return resp.json()

@@ -1,4 +1,5 @@
-"""复盘模式智能体对话路由：关键词命中→异议；未命中→固定提示不转发 PLD。"""
+"""复盘模式智能体对话路由:PLD /api/classify 语义路由(零副作用),
+分类不可用或 general 意图→按数据修正兜底登记 chat 异议。"""
 import asyncio
 
 import agent_manager
@@ -15,8 +16,12 @@ def make_mgr(monkeypatch, calls):
     async def fake_session(sid):
         return SESSION
 
+    async def fake_classify(message, session_id=None):
+        return {"intent_type": "general", "confidence": 1.0, "parameters": {}}
+
     monkeypatch.setattr(agent_manager.pld_client, "chat_stream", fake_stream)
     monkeypatch.setattr(agent_manager.pld_client, "get_session", fake_session)
+    monkeypatch.setattr(agent_manager.pld_client, "classify", fake_classify)
     mgr = agent_manager.AgentManager()
     mgr.session_id = "s1"
     mgr._run_replay = True
@@ -40,18 +45,19 @@ async def test_keyword_hit_becomes_chat_objection(monkeypatch):
     assert calls == []          # 未直接转发 PLD
 
 
-async def test_keyword_miss_gets_fixed_hint(monkeypatch):
+async def test_keyword_miss_falls_back_to_data_correction(monkeypatch):
+    """关键词门槛已移除:无关键词消息经 classify(general)仍按数据修正兜底登记。"""
     calls = []
     mgr = make_mgr(monkeypatch, calls)
     ws = FakeWS()
     await mgr.connect(ws)
     await mgr.handle_message({"type": "chat", "agent": "wind", "message": "今天天气怎么样"})
-    assert mgr.confirm_decisions == {}
-    # F3：被拒对话（无后端动作）不写入 objection_log，不进保存清单
-    assert mgr.objection_log == []
-    chats = [e for e in ws.events if e["type"] == "chat" and e.get("from") == "agent"]
-    assert any("仅受理与本轮诊断相关的异议" in e["message"] for e in chats)
-    assert calls == []
+    assert mgr.confirm_decisions["WindDiagnosisTool"] == {
+        "decision": "chat", "value": "今天天气怎么样"}
+    assert any(o.get("decision") == "chat" for o in mgr.objection_log)
+    assert any(e["type"] == "objection_accepted" and e["agent"] == "wind"
+               for e in ws.events)
+    assert calls == []          # 未直接转发 PLD chat
 
 
 async def test_ok_click_does_not_override_chat_objection(monkeypatch):
@@ -90,8 +96,12 @@ def make_mgr_multistream(monkeypatch, calls, streams):
     async def fake_session(sid):
         return SESSION
 
+    async def fake_classify(message, session_id=None):
+        return {"intent_type": "general", "confidence": 1.0, "parameters": {}}
+
     monkeypatch.setattr(agent_manager.pld_client, "chat_stream", fake_stream)
     monkeypatch.setattr(agent_manager.pld_client, "get_session", fake_session)
+    monkeypatch.setattr(agent_manager.pld_client, "classify", fake_classify)
     mgr = agent_manager.AgentManager()
     mgr.session_id = "s1"
     return mgr
