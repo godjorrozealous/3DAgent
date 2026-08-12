@@ -559,7 +559,8 @@ class AgentManager:
                             all_text = "；".join(structured + freeform)
                             now = datetime.datetime.now().strftime("%H:%M:%S")
                             self.objection_log.append({
-                                "time": now, "kind": "diagnosis_objection", "text": all_text})
+                                "time": now, "kind": "diagnosis_objection", "text": all_text,
+                                "auto_merged": True})  # 逐项已在 trail,合并条目不进保存清单
                             await self.log(
                                 "commander",
                                 f"复盘异议（{len(structured) + len(freeform)} 项）统一提报司令：{all_text}。"
@@ -796,6 +797,9 @@ class AgentManager:
             "report": run_record.get("report", ""),
             "weights": weights,
             "excluded_tools": excluded,
+            "overrides": dict(self.value_overrides),
+            "report_modifies": [t["text"] for t in self.intervention_trail
+                                if t.get("kind") == "report_modify"],
             "action_log": (session or {}).get("action_log", [])[self._action_count_at_start:],
             "time": run_record["time"],
         }
@@ -986,7 +990,7 @@ class AgentManager:
                           "value": t.get("value"), "text": t.get("text", ""),
                           "label": label_fn(t)})
         for o in self.objection_log:
-            if o.get("kind") == "diagnosis_objection":
+            if o.get("kind") == "diagnosis_objection" and not o.get("auto_merged"):
                 items.append({"kind": "diagnosis_objection", "tool": "", "value": None,
                               "text": o["text"], "label": f"诊断要求：{o['text']}"})
             elif o.get("kind") == "user_input":
