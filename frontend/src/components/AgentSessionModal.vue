@@ -208,7 +208,10 @@ function close() {
           <div class="text-slate-500 text-[10px] mb-1">原始子报告</div>
           <div class="rounded-lg border border-slate-600/40 bg-slate-800/50 px-3 py-2 text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap">{{ rawText }}</div>
         </div>
-        <div v-if="session.override" class="mt-1.5 text-[11px] text-amber-300">已改值：{{ session.override }}</div>
+        <div
+          v-if="session.override"
+          class="mt-1.5 rounded border border-amber-400/50 bg-amber-500/15 px-2.5 py-1.5 text-[11px] text-amber-200"
+        ><span class="font-bold">以您提供的数据为准:</span>{{ session.override }}</div>
       </div>
 
       <!-- 对话区 -->

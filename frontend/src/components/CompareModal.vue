@@ -8,6 +8,7 @@ const rp = computed(() => store.summaries.replay)
 const short = (t) => String(t ?? '—').replace('DiagnosisTool', '')
 const fmtW = (w) => Object.entries(w || {}).map(([t, v]) => `${short(t)}×${v}`).join('，') || '默认'
 const fmtE = (e) => (e || []).map((t) => short(t)).join('，') || '无'
+const fmtO = (o) => Object.entries(o || {}).map(([t, v]) => `${short(t)}:${v}`).join(';') || '无'
 
 // 对比行（逻辑迁移自旧 ReplayPanel.vue，左列实时诊断，右列复盘诊断）
 const rows = computed(() => {
@@ -21,6 +22,7 @@ const rows = computed(() => {
     { label: '主诊断工具', base: short(bs.primary_tool || '—'), replay: short(rs.primary_tool || '—'), changed: (bs.primary_tool || '—') !== (rs.primary_tool || '—') },
     { label: '工具权重', base: fmtW(b.weights), replay: fmtW(r.weights), changed: fmtW(b.weights) !== fmtW(r.weights) },
     { label: '排除工具', base: fmtE(b.excluded_tools), replay: fmtE(r.excluded_tools), changed: fmtE(b.excluded_tools) !== fmtE(r.excluded_tools) },
+    { label: '数据修正', base: fmtO(b.overrides), replay: fmtO(r.overrides), changed: fmtO(b.overrides) !== fmtO(r.overrides) },
   ]
 })
 
@@ -39,6 +41,13 @@ const diffTags = computed(() => {
     if (bv === rv) continue
     if (rv != null) tags.push({ text: `${short(t)} ×${rv}`, cls: 'border-cyan-400/50 bg-cyan-500/15 text-cyan-200' })
     else tags.push({ text: `${short(t)} 恢复默认`, cls: 'border-emerald-400/50 bg-emerald-500/15 text-emerald-200' })
+  }
+  const rO = rp.value?.overrides || {}
+  for (const t of Object.keys(rO)) {
+    tags.push({ text: `${short(t)} 数据修正`, cls: 'border-amber-400/50 bg-amber-500/15 text-amber-200' })
+  }
+  for (const m of rp.value?.report_modifies || []) {
+    tags.push({ text: `报告修改:${m}`, cls: 'border-violet-400/50 bg-violet-500/15 text-violet-200' })
   }
   return tags
 })
