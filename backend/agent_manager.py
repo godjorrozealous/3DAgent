@@ -277,6 +277,19 @@ class AgentManager:
             rec = records.get_record(rid)
             if rec:
                 await self.broadcast({"type": "record_detail", "record": rec})
+        elif mtype == "delete_records":
+            ids = []
+            raw_ids = data.get("ids")
+            if isinstance(raw_ids, list):
+                for v in raw_ids:
+                    try:
+                        ids.append(int(v))
+                    except (TypeError, ValueError):
+                        continue
+            deleted = records.delete_records(ids)
+            if deleted:
+                await self.log("commander", f"已删除 {deleted} 条诊断记录。")
+            await self.send_records()
 
     # ---------- 模板 / 策略管理 ----------
     async def send_templates(self):

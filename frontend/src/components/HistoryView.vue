@@ -1,9 +1,32 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { store } from '../store'
-import { requestRecord, setView } from '../ws'
+import { requestRecord, setView, deleteRecords } from '../ws'
 
 const keyword = ref('')
+
+const selected = ref(new Set())
+const confirmDelete = ref(null) // { ids: number[], lines: string[] }
+
+function toggleSelect(id) {
+  const s = new Set(selected.value)
+  if (s.has(id)) s.delete(id); else s.add(id)
+  selected.value = s
+}
+
+function askDelete(ids) {
+  const lines = store.records.filter((r) => ids.includes(r.id))
+    .map((r) => `#${r.id} ${r.line} (${r.time})`)
+  confirmDelete.value = { ids, lines }
+}
+
+function doDelete() {
+  const ids = confirmDelete.value?.ids || []
+  if (ids.length) deleteRecords(ids)
+  if (store.recordDetail && ids.includes(store.recordDetail.id)) store.recordDetail = null
+  selected.value = new Set()
+  confirmDelete.value = null
+}
 
 const filtered = computed(() => {
   const k = keyword.value.trim().toLowerCase()
@@ -32,6 +55,11 @@ function objectionText(o) {
         class="flex-1 max-w-md bg-slate-900/80 border border-cyan-500/30 rounded px-3 py-1.5 text-xs text-cyan-100 outline-none focus:border-cyan-300 placeholder:text-slate-600"
       />
       <button
+        v-if="selected.size"
+        @click="askDelete([...selected])"
+        class="text-xs px-3 py-1.5 rounded border border-red-400/50 text-red-200 bg-red-500/15 hover:bg-red-400/25"
+      >删除选中({{ selected.size }})</button>
+      <button
         @click="setView('room')"
         class="text-xs px-3 py-1.5 rounded border border-cyan-400/50 text-cyan-200 bg-cyan-500/15 hover:bg-cyan-400/25"
       >返回指挥室</button>
@@ -43,15 +71,26 @@ function objectionText(o) {
         <div
           v-for="r in [...filtered].reverse()" :key="r.id"
           @click="requestRecord(r.id)"
-          class="px-3 py-2 border-b border-slate-700/40 cursor-pointer hover:bg-cyan-500/10"
+          class="px-3 py-2 border-b border-slate-700/40 cursor-pointer hover:bg-cyan-500/10 flex items-start gap-2"
           :class="store.recordDetail?.id === r.id ? 'bg-cyan-500/15' : ''"
         >
-          <div class="text-xs text-cyan-100 truncate" :title="r.line">{{ r.line }}</div>
-          <div class="text-[10px] text-slate-500 mt-0.5 flex gap-2 flex-wrap">
-            <span>#{{ r.id }} · {{ r.time }}</span>
-            <span v-if="r.has_replay" class="text-emerald-300">已复盘</span>
-            <span v-for="s in r.strategies" :key="s" class="text-fuchsia-300">{{ s }}</span>
+          <input
+            type="checkbox" :checked="selected.has(r.id)"
+            @click.stop="toggleSelect(r.id)"
+            class="mt-0.5 accent-red-400 shrink-0"
+          />
+          <div class="flex-1 min-w-0">
+            <div class="text-xs text-cyan-100 truncate" :title="r.line">{{ r.line }}</div>
+            <div class="text-[10px] text-slate-500 mt-0.5 flex gap-2 flex-wrap">
+              <span>#{{ r.id }} · {{ r.time }}</span>
+              <span v-if="r.has_replay" class="text-emerald-300">已复盘</span>
+              <span v-for="s in r.strategies" :key="s" class="text-fuchsia-300">{{ s }}</span>
+            </div>
           </div>
+          <button
+            @click.stop="askDelete([r.id])"
+            class="text-[10px] px-1.5 py-0.5 rounded border border-red-400/40 text-red-300/80 hover:bg-red-500/20 shrink-0"
+          >删除</button>
         </div>
         <div v-if="!filtered.length" class="text-slate-600 text-xs text-center py-8">暂无记录</div>
       </div>
@@ -94,6 +133,30 @@ function objectionText(o) {
           </div>
         </template>
         <div v-else class="text-slate-600 text-xs text-center py-16">选择左侧记录查看详情</div>
+      </div>
+    </div>
+
+    <div
+      v-if="confirmDelete"
+      class="absolute inset-0 z-20 bg-slate-950/70 flex items-center justify-center"
+      @click.self="confirmDelete = null"
+    >
+      <div class="glass rounded-lg p-4 w-[360px] border border-red-400/30">
+        <div class="text-red-300 text-sm font-bold mb-2">确认删除 {{ confirmDelete.ids.length }} 条记录?</div>
+        <div class="text-[11px] text-slate-300 mb-3 max-h-32 overflow-y-auto">
+          <div v-for="l in confirmDelete.lines" :key="l" class="py-0.5">{{ l }}</div>
+        </div>
+        <div class="text-[10px] text-slate-500 mb-3">删除后不可恢复。</div>
+        <div class="flex justify-end gap-2">
+          <button
+            @click="confirmDelete = null"
+            class="text-xs px-3 py-1.5 rounded border border-slate-500/50 text-slate-300 hover:bg-slate-700/30"
+          >取消</button>
+          <button
+            @click="doDelete"
+            class="text-xs px-3 py-1.5 rounded border border-red-400/50 text-red-200 bg-red-500/20 hover:bg-red-400/30"
+          >确认删除</button>
+        </div>
       </div>
     </div>
   </div>

@@ -210,6 +210,7 @@ export const respondSavePrompt = (save, name) =>
 export const cancelQueued = (index) => send({ type: 'cancel_queued', index })
 export const requestRecords = () => send({ type: 'list_records' })
 export const requestRecord = (id) => send({ type: 'get_record', id })
+export const deleteRecords = (ids) => send({ type: 'delete_records', ids })
 export const listStrategies = () => send({ type: 'list_strategies' })
 export const deleteStrategies = (names) => send({ type: 'delete_strategies', names })
 export function setView(v) {

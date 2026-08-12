@@ -63,3 +63,14 @@ def set_objections(rid: int, objections: list):
 
 def attach_strategy(rid: int, name: str):
     _update(rid, lambda r: r.setdefault("strategies", []).append(name))
+
+
+def delete_records(ids: list[int]) -> int:
+    """按 id 批量删除记录,返回实际删除条数(幂等)。"""
+    recs = _load()
+    drop = set(ids)
+    keep = [r for r in recs if r.get("id") not in drop]
+    deleted = len(recs) - len(keep)
+    if deleted:
+        _write(keep)
+    return deleted
