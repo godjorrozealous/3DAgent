@@ -735,8 +735,9 @@ class AgentManager:
             self.value_overrides[tool] = str(value)
             return "suffix", f"将{tool}相关数值修正为{value}"
         if decision == "chat":
-            self._trail("chat", tool, value)
-            return "suffix", str(value or "")
+            self._trail("chat_override", tool, value)
+            self.value_overrides[tool] = str(value)
+            return "suffix", f"将{tool}相关数值修正为「{value}」(以用户提供数据为准,必须采纳)"
         return "", ""
 
     async def _mark_tools_running(self):
@@ -881,6 +882,8 @@ class AgentManager:
         self.objection_log.append({"time": now, "kind": "tool_objection", "tool": tool,
                                    "decision": "chat", "value": message})
         self.confirm_decisions[tool] = {"decision": "chat", "value": message}
+        # 对话异议升格为数据修正:用户陈述即权威数据,随快照/确认事件下发显示
+        self.value_overrides[tool] = message
         # 对话异议即视为该工具的确认：释放确认等待，确认轮可正常完成进入整轮重跑
         self.pending_confirms.pop(tool, None)
         if not self.pending_confirms and self._confirms_done:
@@ -968,7 +971,7 @@ class AgentManager:
         "exclude": lambda t: f"排除{t['tool']}",
         "time_range": lambda t: f"重新检查{t['tool']}，查询时间段{t['value']}",
         "override": lambda t: f"将{t['tool']}相关数值修正为{t['value']}",
-        "chat": lambda t: f"{t['tool']}：{t['value']}",
+        "chat_override": lambda t: f"{t['tool']}数据修正(对话):{t['value']}",
         "report_modify": lambda t: f"报告修改：{t['text']}",
     }
 
@@ -1033,11 +1036,11 @@ class AgentManager:
             "template_name": "",
             "report_modifications": [it["text"] for it in selected if it["kind"] == "report_modify"],
             "commander_rules": [it["text"] for it in selected
-                                if it["kind"] in ("diagnosis_objection", "user_input")]
-                               + [it["label"] for it in selected if it["kind"] == "chat"],
-            "custom_data": [it["label"] for it in selected if it["kind"] == "override"],
+                                if it["kind"] in ("diagnosis_objection", "user_input")],
+            "custom_data": [it["label"] for it in selected
+                            if it["kind"] in ("override", "chat_override")],
             "trail": [{"kind": it["kind"], "tool": it["tool"], "value": it["value"]}
-                      for it in selected if it["kind"] in ("override", "time_range")],
+                      for it in selected if it["kind"] in ("override", "chat_override", "time_range")],
         })
 
         result = await pld_client.save_skill(name, content)
