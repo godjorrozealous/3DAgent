@@ -192,6 +192,8 @@ class AgentManager:
             self.local_interventions += 1
             await self.log("commander", f"诊断策略已切换为「{name}」（全局默认）。")
             await self.send_skills()
+            await self.send_strategies()   # 策略管理页「使用中」徽章联动
+            await self._refresh_snapshot()  # HUD 权重立即刷新(vendor 已即应用活跃会话)
         elif mtype == "reset_skills":
             await pld_client.reset_skills()
             self.local_interventions += 1
