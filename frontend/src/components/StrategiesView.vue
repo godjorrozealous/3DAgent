@@ -79,7 +79,7 @@ async function doDelete() {
           >使用中</span>
           <button v-else
             @click="activateSkill(s.name)"
-            class="text-[10px] px-1.5 py-0.5 rounded border border-cyan-400/50 text-cyan-200 bg-cyan-500/15 hover:bg-cyan-400/25"
+            class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 hover:bg-cyan-400/30"
           >激活</button>
         </span>
       </div>

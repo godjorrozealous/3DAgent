@@ -103,8 +103,14 @@ function handle(event) {
     case 'run_state':
       store.replayMode = event.mode === 'replay'
       store.running = event.mode !== null
-      // 新一轮实时诊断开始：清空上一轮摘要卡（旧轮的实时/复盘摘要属于旧报告，对新轮已失效）
-      if (event.mode === 'realtime') store.summaries = { realtime: null, replay: null }
+      if (event.mode === 'realtime') {
+        // 新实时诊断:上一条线路的双摘要卡与比对数据属陈旧数据,清空
+        // (replay 启动不清——实时卡是比对的基线)
+        store.summaries.realtime = null
+        store.summaries.replay = null
+        store.compare = null
+        if (store.compareOpen) store.compareOpen = false
+      }
       break
     case 'templates':
       store.templates = event.templates
