@@ -8,6 +8,36 @@ const keyword = ref('')
 const selected = ref(new Set())
 const confirmDelete = ref(null) // { ids: number[], lines: string[] }
 
+const allSelected = computed(() =>
+  filtered.value.length > 0 && filtered.value.every((r) => selected.value.has(r.id)))
+
+function toggleAll() {
+  selected.value = allSelected.value
+    ? new Set()
+    : new Set(filtered.value.map((r) => r.id))
+}
+
+// 行右键菜单(单删入口,替代行内按钮防误点)
+const menu = ref(null) // { x, y, id }
+
+function openMenu(e, id) {
+  menu.value = {
+    x: Math.min(e.clientX, window.innerWidth - 140),
+    y: Math.min(e.clientY, window.innerHeight - 60),
+    id,
+  }
+}
+
+function closeMenu() {
+  menu.value = null
+}
+
+function menuDelete() {
+  const id = menu.value?.id
+  closeMenu()
+  if (id != null) askDelete([id])
+}
+
 function toggleSelect(id) {
   const s = new Set(selected.value)
   if (s.has(id)) s.delete(id); else s.add(id)
@@ -46,7 +76,7 @@ function objectionText(o) {
 </script>
 
 <template>
-  <div class="absolute inset-0 z-10 bg-slate-950/95 flex flex-col p-4 gap-3 overflow-hidden pointer-events-auto">
+  <div class="absolute inset-0 z-10 bg-slate-950/95 flex flex-col p-4 gap-3 overflow-hidden pointer-events-auto" @click="closeMenu">
     <div class="flex items-center gap-3 shrink-0">
       <span class="text-cyan-300 font-bold text-sm tracking-widest">◈ 诊断结果集</span>
       <input
@@ -68,9 +98,17 @@ function objectionText(o) {
     <div class="flex-1 flex gap-3 min-h-0">
       <!-- 记录列表 -->
       <div class="w-[380px] shrink-0 glass rounded-lg overflow-y-auto">
+        <div class="flex items-center gap-2 px-3 py-1.5 border-b border-slate-700/50 text-[10px] text-slate-500">
+          <input
+            type="checkbox" :checked="allSelected" @change="toggleAll"
+            class="accent-red-400"
+          />
+          <span>全选(当前列表 {{ filtered.length }} 条)</span>
+        </div>
         <div
           v-for="r in [...filtered].reverse()" :key="r.id"
           @click="requestRecord(r.id)"
+          @contextmenu.prevent="openMenu($event, r.id)"
           class="px-3 py-2 border-b border-slate-700/40 cursor-pointer hover:bg-cyan-500/10 flex items-start gap-2"
           :class="store.recordDetail?.id === r.id ? 'bg-cyan-500/15' : ''"
         >
@@ -87,10 +125,6 @@ function objectionText(o) {
               <span v-for="s in r.strategies" :key="s" class="text-fuchsia-300">{{ s }}</span>
             </div>
           </div>
-          <button
-            @click.stop="askDelete([r.id])"
-            class="text-[10px] px-1.5 py-0.5 rounded border border-red-400/40 text-red-300/80 hover:bg-red-500/20 shrink-0"
-          >删除</button>
         </div>
         <div v-if="!filtered.length" class="text-slate-600 text-xs text-center py-8">暂无记录</div>
       </div>
@@ -158,6 +192,17 @@ function objectionText(o) {
           >确认删除</button>
         </div>
       </div>
+    </div>
+    <div
+      v-if="menu"
+      class="fixed z-30 glass rounded border border-slate-600/50 py-1 w-[130px]"
+      :style="{ left: menu.x + 'px', top: menu.y + 'px' }"
+      @click.stop
+    >
+      <button
+        @click="menuDelete"
+        class="w-full text-left text-[11px] px-3 py-1.5 text-red-300 hover:bg-red-500/15"
+      >删除该记录</button>
     </div>
   </div>
 </template>
