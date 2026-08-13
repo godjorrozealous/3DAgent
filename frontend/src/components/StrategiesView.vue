@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { store } from '../store'
-import { setView, deleteStrategies, listStrategies } from '../ws'
+import { setView, deleteStrategies, listStrategies, activateSkill } from '../ws'
 
 const selected = ref(new Set())
 const confirming = ref(false)
@@ -77,6 +77,10 @@ async function doDelete() {
           <span v-if="s.name === store.strategiesDefault"
             class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-400/40 text-emerald-300"
           >使用中</span>
+          <button v-else
+            @click="activateSkill(s.name)"
+            class="text-[10px] px-1.5 py-0.5 rounded border border-cyan-400/50 text-cyan-200 bg-cyan-500/15 hover:bg-cyan-400/25"
+          >激活</button>
         </span>
       </div>
       <div v-if="!store.strategiesList.length" class="px-3 py-6 text-center text-xs text-slate-600">
