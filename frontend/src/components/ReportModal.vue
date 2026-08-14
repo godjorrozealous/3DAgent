@@ -5,7 +5,7 @@ import { downloadReportDocx } from '../reportDocx'
 
 function download() {
   const m = store.reportModal
-  if (m?.content) downloadReportDocx(m.title, m.content, m.meta)
+  if (m?.content) downloadReportDocx(m.title, m.content, m.meta).catch((e) => console.error('报告下载失败', e))
 }
 
 function escapeHtml(s) {
@@ -52,12 +52,14 @@ function close() {
           <span class="w-2 h-2 rounded-full bg-cyan-300 animate-pulse"></span>
           <span class="text-cyan-200 text-sm font-bold">{{ store.reportModal.title }}</span>
         </div>
-        <button
-          :disabled="!store.reportModal.content"
-          @click="download"
-          class="text-xs px-2.5 py-1 rounded border border-cyan-400/50 text-cyan-200 bg-cyan-500/15 hover:bg-cyan-400/25 disabled:opacity-40 disabled:cursor-not-allowed mr-2"
-        >下载 Word</button>
-        <button @click="close" class="text-slate-400 hover:text-red-300 text-lg leading-none px-1">×</button>
+        <div class="flex items-center">
+          <button
+            :disabled="!store.reportModal.content"
+            @click="download"
+            class="text-xs px-2.5 py-1 rounded border border-cyan-400/50 text-cyan-200 bg-cyan-500/15 hover:bg-cyan-400/25 disabled:opacity-40 disabled:cursor-not-allowed mr-2"
+          >下载 Word</button>
+          <button @click="close" class="text-slate-400 hover:text-red-300 text-lg leading-none px-1">×</button>
+        </div>
       </div>
 
       <!-- 内容区 -->
