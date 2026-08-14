@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "docx": "^9.7.1",
     "three": "^0.166.0",
     "vue": "^3.4.0"
   },
