@@ -21,6 +21,10 @@ function viewReport() {
   store.reportModal = {
     title: '复盘诊断报告',
     content: store.summaries.replay?.report || store.report || '',
+    meta: {
+      line: store.summaries.replay?.summary?.line_name || store.currentLine,
+      faultTime: store.summaries.replay?.summary?.fault_time,
+    },
   }
 }
 

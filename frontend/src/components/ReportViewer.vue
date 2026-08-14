@@ -36,6 +36,10 @@ const SummaryCard = defineComponent({
       store.reportModal = {
         title: `${props.kind === 'realtime' ? '实时' : '复盘'}诊断报告`,
         content: props.data?.report || '',
+        meta: {
+          line: props.data?.summary?.line_name,
+          faultTime: props.data?.summary?.fault_time,
+        },
       }
     }
     const field = (label, vnode) =>

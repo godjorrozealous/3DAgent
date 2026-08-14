@@ -66,8 +66,12 @@ const filtered = computed(() => {
       .join(' ').toLowerCase().includes(k))
 })
 
-function viewReport(title, content) {
-  store.reportModal = { title, content: content || '（空）' }
+function viewReport(title, content, summary) {
+  store.reportModal = {
+    title,
+    content: content || '（空）',
+    meta: { line: store.recordDetail?.line, faultTime: summary?.fault_time },
+  }
 }
 
 function objectionText(o) {
@@ -138,12 +142,12 @@ function objectionText(o) {
           <div class="flex gap-2 mb-3 flex-wrap">
             <button
               v-if="store.recordDetail.realtime"
-              @click="viewReport('实时诊断报告', store.recordDetail.realtime.report)"
+              @click="viewReport('实时诊断报告', store.recordDetail.realtime.report, store.recordDetail.realtime.summary)"
               class="text-xs px-3 py-1.5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 hover:bg-cyan-400/30"
             >实时诊断报告</button>
             <button
               v-for="(rp, i) in store.recordDetail.replays" :key="i"
-              @click="viewReport('复盘报告' + (store.recordDetail.replays.length > 1 ? ' ' + (i + 1) : ''), rp.report)"
+              @click="viewReport('复盘报告' + (store.recordDetail.replays.length > 1 ? ' ' + (i + 1) : ''), rp.report, rp.summary)"
               class="text-xs px-3 py-1.5 rounded bg-emerald-500/20 text-emerald-200 border border-emerald-400/40 hover:bg-emerald-400/30"
             >复盘报告{{ store.recordDetail.replays.length > 1 ? ' ' + (i + 1) : '' }}</button>
           </div>
