@@ -51,8 +51,11 @@ function handle(event) {
       if (event.reset) {
         store.report = ''
         store.reportDone = false
+      } else if (event.delta != null) {
+        store.report += event.delta        // 流式增量拼接
+        store.reportDone = false
       } else {
-        store.report = event.content
+        store.report = event.content       // 全量(工具阶段子报告/complete 覆盖)
         store.reportDone = event.done
       }
       break

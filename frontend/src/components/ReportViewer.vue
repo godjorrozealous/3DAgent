@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineComponent, h } from 'vue'
+import { computed, defineComponent, h, ref, watch } from 'vue'
 import { store } from '../store'
 
 // 内联摘要卡组件：props { title, kind, data }
@@ -106,6 +106,14 @@ const SummaryCard = defineComponent({
 
 const lineTitle = computed(() => store.currentLine || store.lineText)
 const canCompare = computed(() => !!store.summaries.realtime && !!store.summaries.replay)
+
+// 报告流式生成中:实时区显示与自动滚动(纯文本轻量渲染,完成后由摘要卡接管)
+const streaming = computed(() => !store.reportDone && store.report.length > 0)
+const streamEl = ref(null)
+watch(() => store.report, () => {
+  const el = streamEl.value
+  if (el) el.scrollTop = el.scrollHeight
+})
 </script>
 
 <template>
@@ -116,6 +124,14 @@ const canCompare = computed(() => !!store.summaries.realtime && !!store.summarie
         <span class="text-cyan-300 text-xs font-bold tracking-widest">📋 诊断报告</span>
       </div>
       <div class="text-slate-300 text-[11px] mt-1 truncate">{{ lineTitle }}</div>
+    </div>
+
+    <!-- 报告生成中:流式实时输出(纯文本,完成后由摘要卡接管) -->
+    <div v-if="streaming" class="border-b border-cyan-500/20 shrink-0 flex flex-col max-h-[38%]">
+      <div class="px-3 py-1 text-cyan-400/80 text-[10px] font-bold tracking-widest flex items-center gap-1.5 shrink-0">
+        <span class="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-pulse"></span>报告生成中…
+      </div>
+      <div ref="streamEl" class="overflow-y-auto px-3 pb-2 whitespace-pre-wrap text-slate-300 text-[11px] leading-relaxed">{{ store.report }}</div>
     </div>
 
     <!-- 双摘要卡 -->
