@@ -51,12 +51,15 @@ function handle(event) {
       if (event.reset) {
         store.report = ''
         store.reportDone = false
+        store.reportGenerating = false
       } else if (event.delta != null) {
         store.report += event.delta        // 流式增量拼接
         store.reportDone = false
+        store.reportGenerating = true      // 仅报告 LLM 流式(delta)点亮「正在生成报告」
       } else {
         store.report = event.content       // 全量(工具阶段子报告/complete 覆盖)
         store.reportDone = event.done
+        if (event.done) store.reportGenerating = false
       }
       break
     case 'chat':
@@ -109,6 +112,8 @@ function handle(event) {
     case 'run_state':
       store.replayMode = event.mode === 'replay'
       store.running = event.mode !== null
+      store.reportKind = event.mode        // 本轮报告归属:realtime | replay | null
+      store.reportGenerating = false
       if (event.mode === 'realtime') {
         // 新实时诊断:上一条线路的双摘要卡与比对数据属陈旧数据,清空
         // (replay 启动不清——实时卡是比对的基线)

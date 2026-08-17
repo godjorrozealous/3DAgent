@@ -7,6 +7,8 @@ export const store = reactive({
   logs: [],              // 事件流
   report: '',
   reportDone: false,
+  reportKind: null,      // 当前正在生成报告的模式 'realtime' | 'replay' | null（run_state.mode）
+  reportGenerating: false, // 报告流式生成中（report delta 起，done/reset/run_state 止）
   lineText: '雅湖线 2025-05-08 19:46 发生跳闸，请进行故障综合诊断',
   diagQueue: [],         // 排队中的诊断 [{ text, time }]
   currentLine: '',       // 当前执行中的诊断文本

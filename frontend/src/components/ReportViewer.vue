@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineComponent, h, ref, watch } from 'vue'
+import { computed, defineComponent, h } from 'vue'
 import { store } from '../store'
 
 // 内联摘要卡组件：props { title, kind, data }
@@ -32,9 +32,15 @@ const SummaryCard = defineComponent({
       if (v >= 0.4) return 'text-amber-300'
       return 'text-red-300'
     }
+    const kindName = () => (props.kind === 'realtime' ? '实时' : '复盘')
+    // 报告流式生成中:按钮变形为「正在生成报告」,点开弹窗实时流式输出
+    const generating = () => store.reportKind === props.kind && store.reportGenerating
+    function openLive() {
+      store.reportModal = { title: `${kindName()}诊断报告`, live: true }
+    }
     function openReport() {
       store.reportModal = {
-        title: `${props.kind === 'realtime' ? '实时' : '复盘'}诊断报告`,
+        title: `${kindName()}诊断报告`,
         content: props.data?.report || '',
         meta: {
           line: props.data?.summary?.line_name,
@@ -49,6 +55,13 @@ const SummaryCard = defineComponent({
       ])
     const textVal = (v, cls = 'text-slate-200') =>
       h('span', { class: `${cls} truncate` }, v == null || v === '' ? '—' : String(v))
+    const generatingBtn = (a) =>
+      h('div', { class: 'px-3 pb-2.5 mt-auto' }, [
+        h('button', {
+          class: `w-full text-[11px] font-bold py-1 rounded border ${a.btn} animate-pulse`,
+          onClick: openLive,
+        }, '正在生成报告…'),
+      ])
 
     return () => {
       const a = ACCENT[props.kind] || ACCENT.realtime
@@ -62,8 +75,10 @@ const SummaryCard = defineComponent({
       if (!d) {
         return h('div', { class: 'glass rounded-lg flex flex-col overflow-hidden' }, [
           header,
-          h('div', { class: 'px-4 py-5 text-center text-slate-500 italic text-[12px]' },
-            props.kind === 'realtime' ? '等待诊断……' : '尚未复盘'),
+          generating()
+            ? generatingBtn(a)
+            : h('div', { class: 'px-4 py-5 text-center text-slate-500 italic text-[12px]' },
+                props.kind === 'realtime' ? '等待诊断……' : '尚未复盘'),
         ])
       }
 
@@ -88,16 +103,18 @@ const SummaryCard = defineComponent({
               }, `${l.action_type || '干预'} ${short(l.tool_name || '')}`.trim())))
         : null
 
-      const btn = h('div', { class: 'px-3 pb-2.5 mt-auto flex gap-2' }, [
-        h('button', {
-          class: `flex-1 text-[11px] font-bold py-1 rounded border ${a.btn}`,
-          onClick: openReport,
-        }, '查看报告'),
-        h('button', {
-          class: 'flex-1 text-[11px] font-bold py-1 rounded border bg-violet-500/20 text-violet-200 border-violet-400/50 hover:bg-violet-400/30',
-          onClick: () => { store.historyModal = true },
-        }, '历史关联'),
-      ])
+      const btn = generating()
+        ? generatingBtn(a)
+        : h('div', { class: 'px-3 pb-2.5 mt-auto flex gap-2' }, [
+            h('button', {
+              class: `flex-1 text-[11px] font-bold py-1 rounded border ${a.btn}`,
+              onClick: openReport,
+            }, '查看报告'),
+            h('button', {
+              class: 'flex-1 text-[11px] font-bold py-1 rounded border bg-violet-500/20 text-violet-200 border-violet-400/50 hover:bg-violet-400/30',
+              onClick: () => { store.historyModal = true },
+            }, '历史关联'),
+          ])
 
       return h('div', { class: 'glass rounded-lg flex flex-col overflow-hidden' }, [header, fields, tags, btn])
     }
@@ -106,14 +123,6 @@ const SummaryCard = defineComponent({
 
 const lineTitle = computed(() => store.currentLine || store.lineText)
 const canCompare = computed(() => !!store.summaries.realtime && !!store.summaries.replay)
-
-// 报告流式生成中:实时区显示与自动滚动(纯文本轻量渲染,完成后由摘要卡接管)
-const streaming = computed(() => !store.reportDone && store.report.length > 0)
-const streamEl = ref(null)
-watch(() => store.report, () => {
-  const el = streamEl.value
-  if (el) el.scrollTop = el.scrollHeight
-})
 </script>
 
 <template>
@@ -126,15 +135,7 @@ watch(() => store.report, () => {
       <div class="text-slate-300 text-[11px] mt-1 truncate">{{ lineTitle }}</div>
     </div>
 
-    <!-- 报告生成中:流式实时输出(纯文本,完成后由摘要卡接管) -->
-    <div v-if="streaming" class="border-b border-cyan-500/20 shrink-0 flex flex-col max-h-[38%]">
-      <div class="px-3 py-1 text-cyan-400/80 text-[10px] font-bold tracking-widest flex items-center gap-1.5 shrink-0">
-        <span class="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-pulse"></span>报告生成中…
-      </div>
-      <div ref="streamEl" class="overflow-y-auto px-3 pb-2 whitespace-pre-wrap text-slate-300 text-[11px] leading-relaxed">{{ store.report }}</div>
-    </div>
-
-    <!-- 双摘要卡 -->
+    <!-- 双摘要卡(报告流式生成不在此显示:按钮变形为「正在生成报告」,点开弹窗看流) -->
     <div class="flex-1 overflow-y-auto p-2 flex flex-col gap-2 min-h-0">
       <SummaryCard title="实时诊断" kind="realtime" :data="store.summaries.realtime" />
       <SummaryCard title="复盘诊断" kind="replay" :data="store.summaries.replay" />

@@ -1,11 +1,17 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { store } from '../store'
 import { downloadReportDocx } from '../reportDocx'
 
+// live 模式:报告流式生成中打开,直接渲染 store.report 增量文本,完成后转 md
+const live = computed(() => !!store.reportModal?.live)
+const streaming = computed(() => live.value && !store.reportDone)
+const content = computed(() =>
+  live.value ? store.report : (store.reportModal?.content || ''))
+
 function download() {
   const m = store.reportModal
-  if (m?.content) downloadReportDocx(m.title, m.content, m.meta).catch((e) => console.error('报告下载失败', e))
+  if (content.value) downloadReportDocx(m.title, content.value, m.meta).catch((e) => console.error('报告下载失败', e))
 }
 
 function escapeHtml(s) {
@@ -29,7 +35,14 @@ function renderMd(md) {
   return h
 }
 
-const html = computed(() => (store.reportModal ? renderMd(store.reportModal.content || '') : ''))
+const html = computed(() => renderMd(content.value))
+
+// 流式期间自动滚动到底部
+const bodyEl = ref(null)
+watch(() => store.report, () => {
+  const el = bodyEl.value
+  if (el && streaming.value) el.scrollTop = el.scrollHeight
+})
 
 function close() {
   store.reportModal = null
@@ -51,10 +64,11 @@ function close() {
         <div class="flex items-center gap-2">
           <span class="w-2 h-2 rounded-full bg-cyan-300 animate-pulse"></span>
           <span class="text-cyan-200 text-sm font-bold">{{ store.reportModal.title }}</span>
+          <span v-if="streaming" class="text-cyan-400/80 text-[10px] font-bold tracking-widest">正在生成…</span>
         </div>
         <div class="flex items-center">
           <button
-            :disabled="!store.reportModal.content"
+            :disabled="!content || streaming"
             @click="download"
             class="text-xs px-2.5 py-1 rounded border border-cyan-400/50 text-cyan-200 bg-cyan-500/15 hover:bg-cyan-400/25 disabled:opacity-40 disabled:cursor-not-allowed mr-2"
           >下载 Word</button>
@@ -63,8 +77,9 @@ function close() {
       </div>
 
       <!-- 内容区 -->
-      <div class="flex-1 overflow-y-auto px-5 py-4 text-[12px] text-slate-200 leading-relaxed">
-        <div v-if="!store.reportModal.content" class="text-slate-500 italic text-center py-8">报告内容为空</div>
+      <div ref="bodyEl" class="flex-1 overflow-y-auto px-5 py-4 text-[12px] text-slate-200 leading-relaxed">
+        <div v-if="streaming" class="whitespace-pre-wrap">{{ content || '等待报告流式输出……' }}</div>
+        <div v-else-if="!content" class="text-slate-500 italic text-center py-8">报告内容为空</div>
         <div v-else class="md-body" v-html="html"></div>
       </div>
     </div>
