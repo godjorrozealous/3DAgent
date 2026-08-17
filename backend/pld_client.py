@@ -11,11 +11,13 @@ _timeout = httpx.Timeout(connect=10, read=600, write=30, pool=10)
 
 async def chat_stream(message: str, *, session_id: str | None = None,
                       defer_rediagnose: bool = False,
-                      data_overrides: dict | None = None) -> AsyncIterator[dict]:
+                      data_overrides: dict | None = None,
+                      defer_report: bool = False) -> AsyncIterator[dict]:
     """调用 PLDiagnosis /chat，逐条产出 SSE 事件 dict。
 
     事件结构: {"event_type": start|thinking|content|status|complete|error, "payload": {...}, "session_id": ...}
-    session_id / defer_rediagnose 为复盘编排通道参数，缺省不携带。
+    session_id / defer_rediagnose / defer_report 为复盘编排通道参数，缺省不携带。
+    defer_report: 逐项确认轮只执行工具不出报告，全部无异议后发终轮(不带 defer)生成。
     """
     body: dict = {"message": message}
     if session_id:
@@ -24,6 +26,8 @@ async def chat_stream(message: str, *, session_id: str | None = None,
         body["defer_rediagnose"] = True
     if data_overrides:
         body["data_overrides"] = data_overrides
+    if defer_report:
+        body["defer_report"] = True
     async with httpx.AsyncClient(timeout=_timeout) as client:
         async with client.stream(
             "POST", f"{PLD_BASE}/chat", json=body

@@ -42,9 +42,11 @@ async def test_weight_restored_after_replay(monkeypatch):
     """权重异议：0.1 先落地让重跑生效；复盘结束后自动恢复为调整前的 1.0。"""
     calls = []
     streams = [
-        # 流1=首轮诊断, 流2=weight命令(0.1), 流3=裸诊断重跑, 流4=恢复命令(1.0)
+        # 流1=首轮诊断(defer), 流2=weight命令(0.1), 流3=裸诊断重跑(defer),
+        # 流4=无异议终轮(生成报告), 流5=恢复命令(1.0)
         [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
         [{"event_type": "complete", "payload": {"message": "ok"}, "session_id": "s1"}],
+        [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
         [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
         [{"event_type": "complete", "payload": {"message": "ok"}, "session_id": "s1"}],
     ]
@@ -66,8 +68,9 @@ async def test_weight_restored_after_replay(monkeypatch):
     await asyncio.gather(mgr.run_diagnosis(replay=True), respond())
     assert calls[1] == "将LightningDiagnosisTool权重调整为0.1"
     assert calls[2] == calls[0]
+    assert calls[3] == calls[0]  # 无异议终轮:裸诊断消息生成报告
     # 复盘结束后自动还原为调整前数值
-    assert calls[3] == "将LightningDiagnosisTool权重调整为1.0"
+    assert calls[4] == "将LightningDiagnosisTool权重调整为1.0"
     assert any("权重" in e.get("message", "") and "恢复" in e.get("message", "")
                for e in ws.events if e["type"] == "log")
     # 还原后刷新 HUD 快照：权重回到 1.0
@@ -79,6 +82,8 @@ async def test_no_restore_without_weight_objection(monkeypatch):
     """无权重异议的复盘：不得下发任何恢复命令。"""
     calls = []
     streams = [
+        [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
+        # 无异议终轮(生成报告)
         [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
     ]
     mgr = make_mgr(monkeypatch, calls, streams)
@@ -93,4 +98,5 @@ async def test_no_restore_without_weight_objection(monkeypatch):
         await mgr.handle_message({"type": "report_review_response", "satisfied": True})
 
     await asyncio.gather(mgr.run_diagnosis(replay=True), respond())
-    assert len(calls) == 1  # 仅首轮诊断，无权重相关命令
+    assert len(calls) == 2  # 首轮诊断(defer) + 无异议终轮
+    assert not any("权重调整" in c for c in calls)  # 无权重相关命令

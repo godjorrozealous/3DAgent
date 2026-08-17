@@ -37,10 +37,11 @@ def make_mgr(monkeypatch, calls, streams):
 async def test_weight_objection_structured_cmd_then_bare_rerun(monkeypatch):
     """权重异议：先发独立命令，再发裸诊断消息（不带异议后缀）重跑。"""
     calls = []
-    # 流1=首轮诊断, 流2=weight命令(adjust_weight 完成), 流3=裸诊断重跑
+    # 流1=首轮诊断, 流2=weight命令(adjust_weight 完成), 流3=裸诊断重跑, 流4=无异议终轮(生成报告)
     streams = [
         [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
         [{"event_type": "complete", "payload": {"message": "ok"}, "session_id": "s1"}],
+        [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
         [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
     ]
     mgr = make_mgr(monkeypatch, calls, streams)
@@ -74,6 +75,8 @@ async def test_empty_complete_keeps_last_valid_report(monkeypatch):
         [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
         [{"event_type": "complete", "payload": {"message": "ok"}, "session_id": "s1"}],
         [{"event_type": "start", "payload": {}, "session_id": "s1"}, COMPLETE_EMPTY],
+        # 无异议终轮：生成报告(此前轮次的空完成不覆盖有效报告,终轮重新产出)
+        [{"event_type": "start", "payload": {}, "session_id": "s1"}, COMPLETE],
     ]
     mgr = make_mgr(monkeypatch, calls, streams)
     ws = FakeWS()

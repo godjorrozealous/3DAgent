@@ -113,7 +113,7 @@ async def test_realtime_no_confirm(monkeypatch):
 async def test_replay_error_clears_confirm_queue(monkeypatch):
     sent = []
 
-    async def failing_stream(msg):
+    async def failing_stream(msg, **kwargs):
         sent.append(msg)
         yield {"event_type": "start", "payload": {}, "session_id": "s1"}
         # 先广播一个工具结果（复盘模式下会进入 pending_confirms）

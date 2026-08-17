@@ -404,10 +404,13 @@ class AgentManager:
             await asyncio.sleep(3)
 
     async def _stream_run(self, message: str, replay: bool, run_record: dict,
-                          *, session_id: str | None = None) -> dict:
+                          *, session_id: str | None = None,
+                          defer_report: bool = False) -> dict:
         """执行一轮 PLD 诊断流：转发事件、更新席位、复盘中收集逐项确认并下发异议。
 
-        返回 complete 事件的 summary；PLD 报错抛 RuntimeError 由调用方捕获。
+        defer_report: 复盘逐项确认轮只执行工具不出报告，全部无异议后由终轮(不带 defer)生成。
+        返回 complete 事件的 summary；报告延后返回 {"_deferred": True}；
+        PLD 报错抛 RuntimeError 由调用方捕获。
         """
         report_buf = ""
         summary: dict = {}
@@ -419,6 +422,8 @@ class AgentManager:
             stream_kwargs["session_id"] = session_id
         if replay and self.value_overrides:
             stream_kwargs["data_overrides"] = dict(self.value_overrides)
+        if defer_report:
+            stream_kwargs["defer_report"] = True
         async for event in pld_client.chat_stream(message, **stream_kwargs):
             etype = event.get("event_type")
             payload = event.get("payload", {})
@@ -492,6 +497,21 @@ class AgentManager:
                     # complete 时仍以清洗后全文覆盖
                     await self.broadcast({"type": "report", "delta": chunk, "done": False})
             elif etype == "complete":
+                if payload.get("report_deferred"):
+                    # 复盘逐项确认轮:工具执行完毕但报告延后——不覆盖 last_report/
+                    # run_record,仅收集逐项确认;全部无异议后由编排方发终轮生成
+                    await self.log("commander",
+                                   "各诊断工具执行完毕，报告将在全部确认无异议后生成。")
+                    if replay:
+                        self._confirms_done = asyncio.Event()
+                        if self.pending_confirms:
+                            await self.log("commander", "等待指挥员逐项确认各工具诊断结果……")
+                            try:
+                                await asyncio.wait_for(self._confirms_done.wait(), timeout=1800)
+                            except asyncio.TimeoutError:
+                                await self.log("commander", "确认等待超时，按无异议继续。")
+                                self.pending_confirms.clear()
+                    return {"_deferred": True}
                 report = payload.get("report") or report_buf
                 summary = payload.get("summary", {})
                 if not str(report or "").strip():
@@ -558,19 +578,23 @@ class AgentManager:
                 await self.log("commander", f"接收到任务：{message}")
 
             try:
-                summary = await self._stream_run(message, replay, run_record)
+                # 复盘首/重跑轮均 defer_report:只跑工具等逐项确认,报告延后到无异议终轮
+                summary = await self._stream_run(message, replay, run_record,
+                                                 defer_report=replay)
             except RuntimeError as exc:
                 # PLD 会话卡死在 diagnosing（历史诊断流中断残留）→ 自动复位后重试一次
                 if "不允许执行诊断" not in str(exc) or not self.session_id:
                     raise
                 await self.log("commander", "检测到 PLD 会话状态卡死，自动复位后重新发起诊断……")
                 await pld_client.reset_session(self.session_id)
-                summary = await self._stream_run(message, replay, run_record)
+                summary = await self._stream_run(message, replay, run_record,
+                                                 defer_report=replay)
 
             # 以下步骤沿用旧版嵌套在 complete 分支内的语义：仅在 complete 发生后执行，
             # 避免流提前结束时空等审核响应 1800s / _finish_run 补记日志干扰
+            # 复盘 defer 轮 complete 不携带报告,以 _deferred 标记进入主循环
             run_completed = "report" in run_record
-            if replay and run_completed:
+            if replay and (run_completed or summary.get("_deferred")):
                 # 复盘主循环（最多 5 轮）：
                 # 1) 逐项确认中存在异议 → 司令统一收集提报，结束当前诊断，
                 #    携带全部异议整轮重跑，重跑后重新逐项确认；
@@ -614,17 +638,27 @@ class AgentManager:
                                     await self.log("commander",
                                                    f"异议命令下发失败，改为随重跑消息下发:{cmd}")
                                     freeform.append(cmd)
-                            # ② 裸诊断消息（+自由文本后缀）整轮重跑；无异议工具命中缓存复用
+                            # ② 裸诊断消息（+自由文本后缀）整轮重跑(defer 轮:只跑工具待确认)；无异议工具命中缓存复用
                             rerun_msg = message
                             if freeform:
                                 rerun_msg = (f"{message}\n【复盘异议，本次诊断必须采纳】"
                                              f"{'；'.join(freeform)}")
                             new_summary = await self._stream_run(rerun_msg, True, run_record,
-                                                                 session_id=self.session_id)
-                            if not new_summary.get("_invalid"):
+                                                                 session_id=self.session_id,
+                                                                 defer_report=True)
+                            if not new_summary.get("_invalid") and not new_summary.get("_deferred"):
                                 summary = new_summary
                             continue
-                    # 全部确认无异议 → 提交报告审核
+                    # 全部确认无异议 → 终轮(不带 defer)基于缓存工具结果生成报告
+                    await self.log("commander", "全部诊断结果确认无异议，生成复盘诊断报告……")
+                    final = await self._stream_run(message, True, run_record,
+                                                   session_id=self.session_id)
+                    if not final.get("_invalid"):
+                        summary = final
+                    if "report" not in run_record:
+                        # 终轮仍未产出有效报告(PLD 意图误判等):保留现状,不进报告审核
+                        break
+                    # 提交报告审核
                     self._review_event = asyncio.Event()
                     self._review_response = {}
                     await self.broadcast({
@@ -662,8 +696,8 @@ class AgentManager:
                                        f"复盘异议（诊断流程）：{instruction}，司令收集意见后重新组织完整诊断。")
                         new_summary = await self._stream_run(
                             f"{message}\n【复盘异议，本次诊断必须采纳】{instruction}", True, run_record,
-                            session_id=self.session_id)
-                        if not new_summary.get("_invalid"):
+                            session_id=self.session_id, defer_report=True)
+                        if not new_summary.get("_invalid") and not new_summary.get("_deferred"):
                             summary = new_summary
                         continue
                     await self.log("audit", f"按指挥员意见修改报告:{instruction}")
@@ -676,6 +710,19 @@ class AgentManager:
                         if ev.get("event_type") == "complete" and p.get("report"):
                             self.last_report = p["report"]
                             await self.broadcast({"type": "report", "content": p["report"], "done": True})
+                else:
+                    # 5 轮异议仍未收敛:清理残留确认态,按当前诊断状态兜底生成报告收尾
+                    self.confirm_decisions.clear()
+                    self.pending_confirms.clear()
+                    await self.broadcast({"type": "confirm_queue_clear"})
+                    await self.log("commander",
+                                   "复盘异议轮次已达上限，按当前诊断结果生成报告收尾。")
+                    final = await self._stream_run(message, True, run_record,
+                                                   session_id=self.session_id)
+                    if not final.get("_invalid"):
+                        summary = final
+            # 主循环终轮可能才产出报告,此处重算 run_completed
+            run_completed = "report" in run_record
             if run_completed:
                 await self._finish_run(run_record, summary, replay)
 

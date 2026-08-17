@@ -114,8 +114,11 @@ async def test_chat_objection_during_review_wait_not_swallowed(monkeypatch):
     运行结束后 confirm_decisions 无残留。
     """
     calls = []
-    # 流1=首轮诊断；流2=对话异议（自由文本后缀）整轮重跑
+    # 流1=首轮诊断(defer)；流2=无异议终轮(生成报告,进入审核等待)；
+    # 流3=对话异议（自由文本后缀）整轮重跑(defer)；流4=重跑后无异议终轮
     streams = [
+        [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
+        [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
         [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
         [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
     ]
@@ -145,8 +148,8 @@ async def test_chat_objection_during_review_wait_not_swallowed(monkeypatch):
 
     await asyncio.gather(mgr.run_diagnosis(replay=True), respond())
     # 异议触发了整轮重跑（chat 异议为自由文本后缀）
-    assert len(calls) == 2
-    assert "复盘异议" in calls[1] and "这个数据不对，重新检查" in calls[1]
+    assert len(calls) == 4  # 首轮defer + 终轮 + 异议重跑defer + 重跑后终轮
+    assert "复盘异议" in calls[2] and "这个数据不对，重新检查" in calls[2]
     # 运行结束后无残留非 ok 决策（不跨轮泄漏）
     assert not [d for d in mgr.confirm_decisions.values() if d.get("decision") != "ok"]
     assert any(e["type"] == "objection_accepted" for e in ws.events)
@@ -159,6 +162,8 @@ async def test_review_satisfied_without_objection_breaks_normally(monkeypatch):
     """F2 对照：审核满意且无遗留异议 → 正常结束，不触发额外重跑。"""
     calls = []
     streams = [
+        [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
+        # 无异议终轮(生成报告)
         [{"event_type": "start", "payload": {}, "session_id": "s1"}, RESULT_OK, COMPLETE],
     ]
     mgr = make_mgr_multistream(monkeypatch, calls, streams)
@@ -173,7 +178,7 @@ async def test_review_satisfied_without_objection_breaks_normally(monkeypatch):
         await mgr.handle_message({"type": "report_review_response", "satisfied": True})
 
     await asyncio.gather(mgr.run_diagnosis(replay=True), respond())
-    assert len(calls) == 1          # 无额外重跑
+    assert len(calls) == 2          # 首轮defer + 无异议终轮,无额外重跑
     assert mgr.confirm_decisions == {}
 
 

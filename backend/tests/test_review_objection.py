@@ -83,7 +83,8 @@ async def test_report_objection_only_modifies_report(monkeypatch):
 
     await asyncio.gather(mgr.run_diagnosis(replay=True), respond())
     # 报告类异议原文下发，不加重跑前缀，不重跑诊断
-    assert "删除第三章" in calls[-1] and "复盘异议" not in calls[-1]
+    modify_calls = [c for c in calls if c == "删除第三章"]
+    assert len(modify_calls) == 1 and "复盘异议" not in modify_calls[0]
     assert any(o["kind"] == "report_modify" for o in mgr.objection_log)
 
 
