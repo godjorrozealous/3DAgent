@@ -134,3 +134,13 @@ async def classify(message: str, session_id: str | None = None) -> dict:
         resp = await client.post(f"{PLD_BASE}/api/classify", json=body)
         resp.raise_for_status()
         return resp.json()
+
+
+async def history_relation(session_id: str) -> dict:
+    """调用 PLD /api/history-relation 知识库历史关联(KB 串行两问较慢,超时 310s)。"""
+    async with httpx.AsyncClient(timeout=310) as client:
+        resp = await client.post(
+            f"{PLD_BASE}/api/history-relation", json={"session_id": session_id}
+        )
+        resp.raise_for_status()
+        return resp.json()

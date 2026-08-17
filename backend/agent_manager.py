@@ -9,7 +9,7 @@
   lightning 雷电诊断    = LightningDiagnosisTool  (8001, 真实取数)
   wind     风偏诊断     = WindDiagnosisTool       (8003)
   icing    覆冰诊断     = IcingDiagnosisTool      (8002)
-  bird     鸟害诊断     = BirdDamageDiagnosisTool (8004)
+  weather  微气象诊断   = WeatherDiagnosisTool   (8005)
   audit    报告审核     = ReportComposer 报告生成与规范化
 """
 import asyncio
@@ -43,7 +43,7 @@ AGENTS = {
     "lightning": {"name": "雷电诊断智能体", "role": "LightningDiagnosisTool :8001"},
     "wind": {"name": "风偏诊断智能体", "role": "WindDiagnosisTool :8003"},
     "icing": {"name": "覆冰诊断智能体", "role": "IcingDiagnosisTool :8002"},
-    "bird": {"name": "鸟害诊断智能体", "role": "BirdDamageDiagnosisTool :8004"},
+    "weather": {"name": "微气象诊断智能体", "role": "WeatherDiagnosisTool :8005"},
     "audit": {"name": "报告审核智能体", "role": "ReportComposer 报告生成"},
 }
 
@@ -52,7 +52,7 @@ TOOL_AGENTS = {
     "lightning": "LightningDiagnosisTool",
     "wind": "WindDiagnosisTool",
     "icing": "IcingDiagnosisTool",
-    "bird": "BirdDamageDiagnosisTool",
+    "weather": "WeatherDiagnosisTool",
 }
 TOOL_TO_AGENT = {v: k for k, v in TOOL_AGENTS.items()}
 
@@ -292,6 +292,18 @@ class AgentManager:
             if deleted:
                 await self.log("commander", f"已删除 {deleted} 条诊断记录。")
             await self.send_records()
+        elif mtype == "history_relation":
+            if not self.session_id:
+                await self.broadcast({"type": "history_relation", "error": "无活跃会话"})
+            else:
+                try:
+                    result = await pld_client.history_relation(self.session_id)
+                    await self.broadcast({
+                        "type": "history_relation",
+                        "sections": result.get("sections", []),
+                    })
+                except Exception as e:
+                    await self.broadcast({"type": "history_relation", "error": str(e)})
 
     # ---------- 模板 / 策略管理 ----------
     async def send_templates(self):
@@ -472,7 +484,7 @@ class AgentManager:
                                 "empty": empty,
                             }
                             await self.broadcast(self.pending_confirms[tool])
-            elif etype == "content":
+            elif etype in ("content", "report_chunk"):
                 chunk = payload.get("content", "")
                 if chunk:
                     report_buf += chunk

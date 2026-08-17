@@ -7,8 +7,8 @@ def test_parse_planned_tools():
     assert agent_manager.parse_planned_tools(text) == ["LightningDiagnosisTool", "WindDiagnosisTool"]
     assert agent_manager.parse_planned_tools("无工具信息") == []
     # 去重保序
-    t2 = "调用 BirdDamageDiagnosisTool, LightningDiagnosisTool、BirdDamageDiagnosisTool"
-    assert agent_manager.parse_planned_tools(t2) == ["BirdDamageDiagnosisTool", "LightningDiagnosisTool"]
+    t2 = "调用 WeatherDiagnosisTool, LightningDiagnosisTool、WeatherDiagnosisTool"
+    assert agent_manager.parse_planned_tools(t2) == ["WeatherDiagnosisTool", "LightningDiagnosisTool"]
 
 
 async def test_skipped_agents_blink_and_planned_run(monkeypatch):
@@ -32,7 +32,7 @@ async def test_skipped_agents_blink_and_planned_run(monkeypatch):
     await mgr.run_diagnosis(replay=False)
     # 计划经事件流注入(与生产一致),而非直接预设 planned_tools
     assert mgr.planned_tools == ["LightningDiagnosisTool", "WindDiagnosisTool"]
-    # 计划内:running;计划外(icing/bird):先 running 后 idle(亮一下就灭)
+    # 计划内:running;计划外(icing/weather):先 running 后 idle(亮一下就灭)
     lightning_states = [e["status"] for e in ws.events if e.get("type") == "agent_status" and e.get("agent") == "lightning"]
     icing_states = [e["status"] for e in ws.events if e.get("type") == "agent_status" and e.get("agent") == "icing"]
     assert "running" in lightning_states
@@ -67,7 +67,7 @@ async def test_planned_tools_reset_between_runs(monkeypatch):
     await mgr.run_diagnosis(replay=False)
     assert mgr.planned_tools == []
     # 回退为全工具计划:四个工具席位全部 running,且无「本轮未调用该工具」闪烁日志
-    for aid in ("lightning", "wind", "icing", "bird"):
+    for aid in ("lightning", "wind", "icing", "weather"):
         states = [e["status"] for e in ws.events if e.get("type") == "agent_status" and e.get("agent") == aid]
         assert "running" in states, aid
         blink_logs = [

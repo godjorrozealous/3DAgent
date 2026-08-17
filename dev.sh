@@ -27,12 +27,12 @@ mkdir -p "$PID_DIR"
 BACKEND_PY="$ROOT/backend/.venv/bin/python"
 PLD_DIR="$ROOT/vendor/diagnosis-agent"
 PLD_PY="$PLD_DIR/.venv/bin/python"
-MCP_SERVICES="lightning icing wind bird weather"
+MCP_SERVICES="lightning icing wind weather"
 
 mcp_port() {  # lightning→8001 … weather→8005
     case "$1" in
         lightning) echo 8001 ;; icing) echo 8002 ;; wind) echo 8003 ;;
-        bird)      echo 8004 ;; weather) echo 8005 ;;
+        weather)   echo 8005 ;;
     esac
 }
 
