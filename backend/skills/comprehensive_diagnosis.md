@@ -31,7 +31,7 @@ weights:
   LightningDiagnosisTool: 1.0
   IcingDiagnosisTool: 0.9
   WindDiagnosisTool: 0.8
-  BirdDamageDiagnosisTool: 0.6
+  WeatherDiagnosisTool: 0.6
 ```
 
 ## 工具调用策略
@@ -41,8 +41,9 @@ weights:
 | LightningDiagnosisTool | 1.0 | Always call |
 | IcingDiagnosisTool | 0.9 | Call when temp ≤ 5°C or winter; otherwise skip |
 | WindDiagnosisTool | 0.8 | Always call |
-| BirdDamageDiagnosisTool | 0.6 | Always call |
-| WeatherDiagnosisTool | 0.5 | DO NOT call - currently disabled due to browser automation timeout |
+| BirdDamageDiagnosisTool | 0.6 | DO NOT call |
+| WeatherDiagnosisTool | 0.6 | Always call |
+
 
 ## 诊断流程
 
@@ -62,7 +63,7 @@ weights:
 ## 注意事项
 
 - Skip icing diagnosis in summer (no significance)
-- Skip WeatherDiagnosisTool completely - it is currently disabled due to browser automation timeout
+
 - Merge evidence when multiple tools point to the same fault type
 - Prompt user when new tools are available
 - Fault time must be millisecond-precise: YYYY-MM-DD HH:MM:SS.mmm
