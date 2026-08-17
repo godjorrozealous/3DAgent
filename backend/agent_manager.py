@@ -488,7 +488,9 @@ class AgentManager:
                 chunk = payload.get("content", "")
                 if chunk:
                     report_buf += chunk
-                    await self.broadcast({"type": "report", "content": report_buf, "done": False})
+                    # 增量广播:每块只发 delta(O(n) 流量);全量累积由前端拼接,
+                    # complete 时仍以清洗后全文覆盖
+                    await self.broadcast({"type": "report", "delta": chunk, "done": False})
             elif etype == "complete":
                 report = payload.get("report") or report_buf
                 summary = payload.get("summary", {})
