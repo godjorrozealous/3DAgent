@@ -14,6 +14,7 @@ import SaveStrategyModal from './components/SaveStrategyModal.vue'
 import AgentSessionModal from './components/AgentSessionModal.vue'
 import ReportReviewModal from './components/ReportReviewModal.vue'
 import HistoryView from './components/HistoryView.vue'
+import HistoryRelationModal from './components/HistoryRelationModal.vue'
 import StrategiesView from './components/StrategiesView.vue'
 
 const canvasHost = ref(null)
@@ -34,11 +35,11 @@ const STATUS_CLASS = {
 }
 
 // 策略展示：工具名缩写与中文映射、默认权重基线
-const TOOL_CN = { Lightning: '雷电', Icing: '覆冰', Wind: '风偏', Bird: '鸟害' }
-const DEFAULT_WEIGHTS = { Lightning: 1.0, Icing: 0.9, Wind: 0.8, Bird: 0.6 }
+const TOOL_CN = { Lightning: '雷电', Icing: '覆冰', Wind: '风偏', Weather: '微气象' }
+const DEFAULT_WEIGHTS = { Lightning: 1.0, Icing: 0.9, Wind: 1.0, Weather: 1.0 }
 const shortName = (t) => t.replace('DiagnosisTool', '')
 
-const ALL_TOOLS = ['Lightning', 'Wind', 'Icing', 'Bird']
+const ALL_TOOLS = ['Lightning', 'Wind', 'Icing', 'Weather']
 function buildStrategyText() {
   const excluded = new Set(store.excludedTools.map(shortName))
   const planned = new Set((store.plannedTools || []).map(shortName))
@@ -75,7 +76,7 @@ const TOOL_AGENTS = {
   lightning: 'LightningDiagnosisTool',
   wind: 'WindDiagnosisTool',
   icing: 'IcingDiagnosisTool',
-  bird: 'BirdDamageDiagnosisTool',
+  weather: 'WeatherDiagnosisTool',
 }
 function onAgentDblClick(agentId) {
   if (store.replayMode && TOOL_AGENTS[agentId]) {
@@ -191,6 +192,8 @@ onMounted(() => {
     <ChatModal />
     <!-- 查看报告弹窗 -->
     <ReportModal />
+    <!-- 历史关联(故障知识库)弹窗 -->
+    <HistoryRelationModal />
     <!-- 实时/复盘比对弹窗 -->
     <CompareModal />
     <!-- 策略保存提醒弹窗 -->

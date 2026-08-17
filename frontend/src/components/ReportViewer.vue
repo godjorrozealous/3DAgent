@@ -88,11 +88,15 @@ const SummaryCard = defineComponent({
               }, `${l.action_type || '干预'} ${short(l.tool_name || '')}`.trim())))
         : null
 
-      const btn = h('div', { class: 'px-3 pb-2.5 mt-auto' }, [
+      const btn = h('div', { class: 'px-3 pb-2.5 mt-auto flex gap-2' }, [
         h('button', {
-          class: `w-full text-[11px] font-bold py-1 rounded border ${a.btn}`,
+          class: `flex-1 text-[11px] font-bold py-1 rounded border ${a.btn}`,
           onClick: openReport,
         }, '查看报告'),
+        h('button', {
+          class: 'flex-1 text-[11px] font-bold py-1 rounded border bg-violet-500/20 text-violet-200 border-violet-400/50 hover:bg-violet-400/30',
+          onClick: () => { store.historyModal = true },
+        }, '历史关联'),
       ])
 
       return h('div', { class: 'glass rounded-lg flex flex-col overflow-hidden' }, [header, fields, tags, btn])

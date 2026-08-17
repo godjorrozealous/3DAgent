@@ -80,7 +80,7 @@ async function onUpload(e) {
     <!-- 消息区 -->
     <div ref="listEl" class="overflow-y-auto px-4 py-3 space-y-2.5 font-mono text-[12px]" :class="hasMgmt ? 'h-40' : 'h-56'">
       <div class="text-slate-500 italic text-[11px]">
-        已建立与「{{ agent.name }}」的加密直连。司令员可执行真实干预，例如："排除鸟害工具"、"将雷电工具权重调整为 1.5"、"恢复覆冰工具"
+        已建立与「{{ agent.name }}」的加密直连。司令员可执行真实干预，例如："排除微气象工具"、"将雷电工具权重调整为 1.5"、"恢复覆冰工具"
       </div>
       <div v-for="(m, i) in messages" :key="i" class="flex" :class="m.from === 'user' ? 'justify-end' : 'justify-start'">
         <div

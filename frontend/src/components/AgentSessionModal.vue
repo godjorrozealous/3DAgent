@@ -8,7 +8,7 @@ const TOOL_TO_AGENT = {
   LightningDiagnosisTool: 'lightning',
   WindDiagnosisTool: 'wind',
   IcingDiagnosisTool: 'icing',
-  BirdDamageDiagnosisTool: 'bird',
+  WeatherDiagnosisTool: 'weather',
 }
 
 const session = computed(() => store.agentSession)

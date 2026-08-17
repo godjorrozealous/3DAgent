@@ -36,6 +36,8 @@ export const store = reactive({
   reportReviewPending: false,
   reportReviewEmpty: false, // 复盘报告为空标记（report_review_request.empty）
   reportModal: null,     // null | { title, content, meta?: { line, faultTime } }
+  historyRelation: { status: 'idle', sections: [], error: '' }, // idle|loading|ready|error
+  historyModal: false,
   compareOpen: false,
   valueOverrides: {},    // session_snapshot.overrides
 })

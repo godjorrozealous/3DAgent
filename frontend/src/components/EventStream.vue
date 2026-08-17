@@ -14,7 +14,7 @@ const agentColor = (id) => ({
   lightning: 'text-yellow-300',
   wind: 'text-sky-300',
   icing: 'text-indigo-300',
-  bird: 'text-orange-300',
+  weather: 'text-orange-300',
   audit: 'text-fuchsia-300',
 }[id] || 'text-slate-300')
 </script>

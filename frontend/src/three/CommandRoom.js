@@ -14,7 +14,7 @@ const STATIONS = [
   { id: 'lightning', label: '雷电诊断', pos: [-11, 0, -4], rotY: Math.PI / 2, kind: 'researcher' },
   { id: 'wind', label: '风偏诊断', pos: [-11, 0, 2.5], rotY: Math.PI / 2, kind: 'researcher' },
   { id: 'icing', label: '覆冰诊断', pos: [11, 0, -4], rotY: -Math.PI / 2, kind: 'researcher' },
-  { id: 'bird', label: '鸟害诊断', pos: [11, 0, 2.5], rotY: -Math.PI / 2, kind: 'researcher' },
+  { id: 'weather', label: '微气象诊断', pos: [11, 0, 2.5], rotY: -Math.PI / 2, kind: 'researcher' },
   { id: 'audit', label: '报告审核', pos: [6.5, 0, 7.5], rotY: Math.PI, kind: 'writer' },
 ]
 
@@ -613,7 +613,7 @@ export class CommandRoom {
 
   _buildLinks() {
     const from = new THREE.Vector3(0, 2.4, -8)
-    for (const id of ['lightning', 'wind', 'icing', 'bird', 'audit']) {
+    for (const id of ['lightning', 'wind', 'icing', 'weather', 'audit']) {
       const p = this.nodes[id].group.position
       const to = new THREE.Vector3(p.x, 2.2, p.z)
       const line = new THREE.Line(

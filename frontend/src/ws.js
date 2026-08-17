@@ -69,6 +69,9 @@ function handle(event) {
       break
     case 'report_summary':
       store.summaries[event.kind] = event
+      // 报告生成即后台预取历史关联(知识库串行两问较慢,与展示并行;vendor 会话级缓存去重)
+      store.historyRelation = { status: 'loading', sections: [], error: '' }
+      send({ type: 'history_relation' })
       break
     case 'prompt_save_strategy':
       store.savePrompt = { interventions: event.interventions, items: event.items || [], context: event.context }
@@ -110,6 +113,7 @@ function handle(event) {
         store.summaries.replay = null
         store.compare = null
         if (store.compareOpen) store.compareOpen = false
+        store.historyRelation = { status: 'idle', sections: [], error: '' }
       }
       break
     case 'templates':
@@ -126,6 +130,11 @@ function handle(event) {
       break
     case 'strategy_saved':
       store.strategies.push(event.strategy)
+      break
+    case 'history_relation':
+      store.historyRelation = event.error
+        ? { status: 'error', sections: [], error: event.error }
+        : { status: 'ready', sections: event.sections || [], error: '' }
       break
     case 'replay_compare':
       store.compare = event
@@ -218,6 +227,7 @@ export const respondSavePrompt = (save, name) =>
 export const cancelQueued = (index) => send({ type: 'cancel_queued', index })
 export const requestRecords = () => send({ type: 'list_records' })
 export const requestRecord = (id) => send({ type: 'get_record', id })
+export const requestHistoryRelation = () => send({ type: 'history_relation' })
 export const deleteRecords = (ids) => send({ type: 'delete_records', ids })
 export const listStrategies = () => send({ type: 'list_strategies' })
 export const deleteStrategies = (names) => send({ type: 'delete_strategies', names })
