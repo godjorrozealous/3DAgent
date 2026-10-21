@@ -15,6 +15,7 @@ import AgentSessionModal from './components/AgentSessionModal.vue'
 import ReportReviewModal from './components/ReportReviewModal.vue'
 import HistoryView from './components/HistoryView.vue'
 import HistoryRelationModal from './components/HistoryRelationModal.vue'
+import LinkViewerModal from './components/LinkViewerModal.vue'
 import StrategiesView from './components/StrategiesView.vue'
 
 const canvasHost = ref(null)
@@ -194,6 +195,8 @@ onMounted(() => {
     <ReportModal />
     <!-- 历史关联(故障知识库)弹窗 -->
     <HistoryRelationModal />
+    <!-- 历史关联来源文件(PDF)查看器 -->
+    <LinkViewerModal />
     <!-- 实时/复盘比对弹窗 -->
     <CompareModal />
     <!-- 策略保存提醒弹窗 -->

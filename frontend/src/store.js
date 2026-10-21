@@ -40,6 +40,7 @@ export const store = reactive({
   reportModal: null,     // null | { title, content, meta?: { line, faultTime } }
   historyRelation: { status: 'idle', sections: [], error: '' }, // idle|loading|ready|error
   historyModal: false,
+  linkViewer: { open: false, url: '' }, // 历史关联正文超链接的内置查看器(PDF)
   compareOpen: false,
   valueOverrides: {},    // session_snapshot.overrides
 })

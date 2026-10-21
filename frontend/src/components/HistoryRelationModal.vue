@@ -4,6 +4,30 @@ import { store } from '../store'
 function close() {
   store.historyModal = false
 }
+
+// 把答案文本按 URL 切分为片段：普通文本原样渲染，URL 变成可点链接（点开内置查看器）。
+// URL 尾部紧跟的中英文标点（如「。」「，」「）」）不属于链接，剥掉避免点进去 404。
+function linkify(text) {
+  if (!text) return []
+  const re = /https?:\/\/[!-~]+/g
+  const parts = []
+  let last = 0
+  let m
+  while ((m = re.exec(text))) {
+    const url = m[0].replace(/[。，、；：？！）】》"',;.)\]]+$/, '')
+    const tail = m[0].slice(url.length)
+    if (m.index > last) parts.push({ text: text.slice(last, m.index) })
+    if (url) parts.push({ text: url, url })
+    if (tail) parts.push({ text: tail })
+    last = m.index + m[0].length
+  }
+  if (last < text.length) parts.push({ text: text.slice(last) })
+  return parts
+}
+
+function openLink(url) {
+  store.linkViewer = { open: true, url }
+}
 </script>
 
 <template>
@@ -33,12 +57,18 @@ function close() {
           <span class="text-slate-500 text-[11px]">请确认 fault-knowledge-base 已启动(端口 8503);未启动不影响诊断功能。</span>
         </div>
         <div v-else-if="store.historyRelation.status === 'idle'" class="text-slate-500 italic text-center py-8">
-          暂无关联数据(报告生成后自动查询)
+          暂无关联数据(诊断启动后自动后台查询)
         </div>
         <template v-else>
           <div v-for="(s, i) in store.historyRelation.sections" :key="i" class="mb-4">
             <div class="text-violet-300 text-xs font-bold mb-1">{{ s.title }}</div>
-            <div class="whitespace-pre-wrap text-slate-300">{{ s.answer }}</div>
+            <div class="whitespace-pre-wrap text-slate-300"><template v-for="(p, j) in linkify(s.answer)" :key="j"><a
+              v-if="p.url"
+              href="#"
+              @click.prevent="openLink(p.url)"
+              class="text-violet-300 underline underline-offset-2 hover:text-violet-100 break-all"
+              title="点击在弹窗中查看"
+            >{{ p.text }}</a><span v-else>{{ p.text }}</span></template></div>
           </div>
         </template>
       </div>

@@ -1,12 +1,17 @@
 """FastAPI 入口：WebSocket 实时通道 + 健康检查。"""
-from fastapi import FastAPI, UploadFile, WebSocket, WebSocketDisconnect
+import os
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 import pld_client
+import preview
 from agent_manager import AgentManager
 
 app = FastAPI(title="输电线路智能诊断全息指挥室")
+app.include_router(preview.router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -48,3 +53,19 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8100, reload=True)
+
+
+# ---------- 生产模式：托管前端构建产物 ----------
+# dist 存在时由后端直接托管（ws.js 走 location.host 同源连接，无需 Node/Vite）。
+# 路由注册顺序保证 /api/* 与 /ws 优先于 SPA 回退。
+DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if DIST_DIR.is_dir():
+
+    @app.get("/{full_path:path}")
+    def spa_fallback(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(404)
+        file = DIST_DIR / full_path
+        if full_path and file.is_file():
+            return FileResponse(file)
+        return FileResponse(DIST_DIR / "index.html")
