@@ -10,3 +10,5 @@ backend/data/
 logs/
 # 416MB 3D 模型,超出 GitHub 100MB 单文件上限,保留在本地
 kongzhi.FBX
+# 1.3GB 打包产物(wheels/LibreOffice 缓存/tar.gz),保留在本地
+dist-packages/
