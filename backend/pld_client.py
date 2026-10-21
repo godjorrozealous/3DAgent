@@ -1,10 +1,12 @@
 """PLDiagnosis 平台客户端：SSE 聊天流 + REST 会话/技能接口。"""
 import json
+import os
 from typing import AsyncIterator
 
 import httpx
 
-PLD_BASE = "http://localhost:5000"
+# PLD 平台地址：默认同机 6000 端口（避开内网 5000 占用），可用 PLD_BASE 覆盖
+PLD_BASE = os.getenv("PLD_BASE", "http://localhost:6000")
 
 _timeout = httpx.Timeout(connect=10, read=600, write=30, pool=10)
 
@@ -141,8 +143,12 @@ async def classify(message: str, session_id: str | None = None) -> dict:
 
 
 async def history_relation(session_id: str) -> dict:
-    """调用 PLD /api/history-relation 知识库历史关联(KB 串行两问较慢,超时 310s)。"""
-    async with httpx.AsyncClient(timeout=310) as client:
+    """调用 PLD /api/history-relation 知识库历史关联。
+
+    KB 串行两问、每问 timeout=300，最坏约 600s 才整体返回；超时给 660s 余量，
+    避免长等待被误判为失败/端口失效（PLD 侧有会话级缓存，重问秒回）。
+    """
+    async with httpx.AsyncClient(timeout=660) as client:
         resp = await client.post(
             f"{PLD_BASE}/api/history-relation", json={"session_id": session_id}
         )

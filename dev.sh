@@ -10,7 +10,7 @@
 # 服务与端口：
 #   mock 数据平台   8000   vendor/mock-lightning（雷电诊断数据源）
 #   MCP 诊断服务×5  8001-8005  vendor/diagnosis-agent/mcp-services（含默认激活）
-#   PLD 诊断平台    5000   vendor/diagnosis-agent（Flask）
+#   PLD 诊断平台    6000   vendor/diagnosis-agent（Flask，FLASK_PORT=6000）
 #   本项目后端      8100   backend（FastAPI + WebSocket，--reload）
 #   本项目前端      5173   frontend（Vite，用户入口 http://localhost:5173）
 #
@@ -42,6 +42,10 @@ PY3="$PLD_PY"
 
 # 默认激活：session 固化权重时前端提示需手动激活的策略名（对应 active_weights.json）
 export PLD_ACTIVE_SKILL="${PLD_ACTIVE_SKILL:-comprehensive_diagnosis}"
+
+# PLD 平台端口：内网 5000 被其他程序占用，统一调整到 6000
+export FLASK_PORT="${FLASK_PORT:-6000}"
+export PLD_BASE="${PLD_BASE:-http://localhost:$FLASK_PORT}"
 
 red()   { printf "\033[31m%b\033[0m" "$1"; }
 green() { printf "\033[32m%b\033[0m" "$1"; }
@@ -120,9 +124,9 @@ do_start() {
     done
     sleep 2
 
-    echo "== 3/5 PLD 诊断平台 (5000) =="
-    start_svc pld 5000 "$PLD_DIR" "$PLD_PY" web_app.py
-    wait_port 5000 pld 20
+    echo "== 3/5 PLD 诊断平台 (6000) =="
+    start_svc pld 6000 "$PLD_DIR" "$PLD_PY" web_app.py
+    wait_port 6000 pld 20
 
     echo "== 4/5 本项目后端 (8100) =="
     start_svc backend 8100 "$ROOT/backend" "$BACKEND_PY" main.py
@@ -141,7 +145,7 @@ do_stop() {
     echo "== 停止全部服务 =="
     stop_svc frontend 5173
     stop_svc backend 8100
-    stop_svc pld 5000
+    stop_svc pld 6000
     for svc in $MCP_SERVICES; do stop_svc "mcp-$svc" "$(mcp_port "$svc")"; done
     stop_svc mock-lightning 8000
     green "已停止。\n"
@@ -158,7 +162,7 @@ do_status() {
     }
     status_line mock-lightning 8000
     for svc in $MCP_SERVICES; do status_line "mcp-$svc" "$(mcp_port "$svc")"; done
-    status_line pld 5000
+    status_line pld 6000
     status_line backend 8100
     status_line frontend 5173
 }

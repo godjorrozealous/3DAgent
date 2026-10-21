@@ -8,7 +8,7 @@
 浏览器 (5173) ──► 前端 Vite dev server
                      │ /ws、/api 代理
                      ▼
-              后端 FastAPI (8100) ──► PLDiagnosis Flask 平台 (5000)
+              后端 FastAPI (8100) ──► PLDiagnosis Flask 平台 (6000)
                                          │
                                          ├─► LLM（OpenAI 兼容 API）
                                          └─► MCP 诊断服务 ×5
@@ -17,7 +17,7 @@
 
 - **前端** `frontend/`：Vue3 + Three.js + Tailwind，3D 指挥室、实时诊断 HUD、复盘交互、历史结果视图
 - **后端** `backend/`：FastAPI + WebSocket，诊断编排、排队、复盘流程、策略生成（skill 构建）、结果持久化（`backend/data/diagnosis_records.json`）
-- **PLDiagnosis 平台**：外部依赖，仓库 [Cluade_PLDiagonsis-mcp-version](https://github.com/y1018429125-ship-it/Cluade_PLDiagonsis-mcp-version)（`mcp_version` 分支），需运行在 `http://localhost:5000`
+- **PLDiagnosis 平台**：外部依赖，仓库 [Cluade_PLDiagonsis-mcp-version](https://github.com/y1018429125-ship-it/Cluade_PLDiagonsis-mcp-version)（`mcp_version` 分支），需运行在 `http://localhost:6000`（`FLASK_PORT=6000`，避开内网 5000 占用）
 
 ## 端口总览
 
@@ -25,13 +25,13 @@
 |---|---|---|
 | 5173 | 本项目前端 | 用户入口，浏览器访问 |
 | 8100 | 本项目后端 | WebSocket `/ws` + `/api` |
-| 5000 | PLDiagnosis 平台 | 诊断执行引擎（外部依赖） |
+| 6000 | PLDiagnosis 平台 | 诊断执行引擎（外部依赖，`FLASK_PORT=6000`） |
 | 8000 | mock 数据平台 | 雷电诊断的数据源（vendor/mock-lightning） |
 | 8001–8005 | MCP 诊断服务 | PLDiagnosis 的子服务（雷电/覆冰/风偏/鸟害/气象） |
 
 ## 一键启动 / 停止 / 重启（推荐）
 
-项目根目录的 `dev.sh` 统一管理全部 9 个服务（mock 8000、MCP×5 8001–8005、PLD 5000、后端 8100、前端 5173）：
+项目根目录的 `dev.sh` 统一管理全部 9 个服务（mock 8000、MCP×5 8001–8005、PLD 6000、后端 8100、前端 5173）：
 
 ```bash
 ./dev.sh start     # 启动全部服务
@@ -51,7 +51,7 @@
 <details>
 <summary>不想用 dev.sh 时，按以下步骤逐个手动启动（点击展开）</summary>
 
-### 第 1 步：启动 PLDiagnosis 平台（端口 5000 + 8001–8005）
+### 第 1 步：启动 PLDiagnosis 平台（端口 6000 + 8001–8005）
 
 ```bash
 git clone https://github.com/y1018429125-ship-it/Cluade_PLDiagonsis-mcp-version.git
@@ -79,7 +79,7 @@ export LLM_API_KEY="your-api-key-here"
 ./start.sh dev
 ```
 
-脚本会自动：启动 5 个 MCP 服务（8001–8005）→ 安装 Python 依赖（`pip3 install -e .`，要求 Python ≥ 3.10）→ 构建其自带前端 → 启动 Flask 服务于 5000。按 `Ctrl+C` 一并停止全部子服务。
+脚本会自动：启动 5 个 MCP 服务（8001–8005）→ 安装 Python 依赖（`pip3 install -e .`，要求 Python ≥ 3.10）→ 构建其自带前端 → 启动 Flask 服务于 `FLASK_PORT`（本项目统一用 6000：`export FLASK_PORT=6000`）。按 `Ctrl+C` 一并停止全部子服务。
 
 Docker 模式：
 
@@ -91,7 +91,7 @@ Docker 模式：
 **验证：**
 
 ```bash
-curl http://localhost:5000/api/health
+curl http://localhost:6000/api/health
 ```
 
 ### 第 1.5 步：启动 mock 数据平台（端口 8000，雷电诊断依赖）
@@ -135,7 +135,7 @@ npm run dev
 
 浏览器打开 **http://localhost:5173**。
 
-> 前端 `/ws`、`/api` 由 Vite 代理到 8100（见 `frontend/vite.config.js`），后端再转发到 PLDiagnosis 的 5000（见 `backend/pld_client.py` 的 `PLD_BASE`）。如需修改平台地址，改这两处。
+> 前端 `/ws`、`/api` 由 Vite 代理到 8100（见 `frontend/vite.config.js`），后端再转发到 PLDiagnosis（见 `backend/pld_client.py` 的 `PLD_BASE`，默认 `http://localhost:6000`，可用环境变量覆盖）。
 
 </details>
 
@@ -168,9 +168,9 @@ python -m pytest tests/ -q
 ## 常见问题
 
 - **改了代码但没生效**：多半是旧进程没退（后端无 --reload 的手动进程、PLD 是 Flask 需重启）。直接 `./dev.sh restart`，它会连端口残留进程一起清理；然后浏览器强刷 Cmd+Shift+R。
-- **诊断无响应 / 工具全部失败**：`./dev.sh status` 检查 PLDiagnosis（5000）与 5 个 MCP 服务（8001–8005）是否都在运行；看 `logs/pld.log` 与 `logs/mcp-*.log`。
+- **诊断无响应 / 工具全部失败**：`./dev.sh status` 检查 PLDiagnosis（6000）与 5 个 MCP 服务（8001–8005）是否都在运行；看 `logs/pld.log` 与 `logs/mcp-*.log`。
 - **LLM 报错**：确认 `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` 或 `config/config.yaml` 的 `llm` 节配置正确且网络可达（日志见 `logs/pld.log`）。
-- **端口冲突**：PLDiagnosis 用 `FLASK_PORT` 环境变量改端口；本项目后端改 `backend/main.py` 末尾的 `port=8100`；前端改 `frontend/vite.config.js` 的 `server.port`，三者需同步改代理指向（用了 dev.sh 也要同步改脚本里的端口）。
+- **端口冲突**：PLDiagnosis 用 `FLASK_PORT` 环境变量改端口（本项目默认 6000，避开内网 5000 占用）；本项目后端改 `backend/main.py` 末尾的 `port=8100`；前端改 `frontend/vite.config.js` 的 `server.port`，三者需同步改代理指向（用了 dev.sh 也要同步改脚本里的端口）。
 
 ## 目录说明
 
