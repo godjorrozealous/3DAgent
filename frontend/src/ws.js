@@ -75,9 +75,12 @@ function handle(event) {
       break
     case 'report_summary':
       store.summaries[event.kind] = event
-      // 报告生成即后台预取历史关联(知识库串行两问较慢,与展示并行;vendor 会话级缓存去重)
-      store.historyRelation = { status: 'loading', sections: [], error: '' }
-      send({ type: 'history_relation' })
+      // 历史关联由后端在诊断启动时即后台预取，完成会主动广播；
+      // 此处仅在尚未就绪时补一次请求（如后端重启错过预取），ready 则不重复获取
+      if (store.historyRelation.status !== 'ready') {
+        store.historyRelation = { status: 'loading', sections: [], error: '' }
+        send({ type: 'history_relation' })
+      }
       break
     case 'prompt_save_strategy':
       store.savePrompt = { interventions: event.interventions, items: event.items || [], context: event.context }
@@ -236,6 +239,15 @@ export const cancelQueued = (index) => send({ type: 'cancel_queued', index })
 export const requestRecords = () => send({ type: 'list_records' })
 export const requestRecord = (id) => send({ type: 'get_record', id })
 export const requestHistoryRelation = () => send({ type: 'history_relation' })
+// 打开历史关联弹窗：预取未命中（idle/error）时补发查询；loading/ready 直接展示现状
+export function openHistoryModal() {
+  store.historyModal = true
+  const st = store.historyRelation.status
+  if (st === 'idle' || st === 'error') {
+    store.historyRelation = { status: 'loading', sections: [], error: '' }
+    send({ type: 'history_relation' })
+  }
+}
 export const deleteRecords = (ids) => send({ type: 'delete_records', ids })
 export const listStrategies = () => send({ type: 'list_strategies' })
 export const deleteStrategies = (names) => send({ type: 'delete_strategies', names })

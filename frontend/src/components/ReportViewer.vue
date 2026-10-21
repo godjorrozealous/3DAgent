@@ -1,6 +1,7 @@
 <script setup>
 import { computed, defineComponent, h } from 'vue'
 import { store } from '../store'
+import { openHistoryModal } from '../ws'
 
 // 内联摘要卡组件：props { title, kind, data }
 const SummaryCard = defineComponent({
@@ -112,7 +113,7 @@ const SummaryCard = defineComponent({
             }, '查看报告'),
             h('button', {
               class: 'flex-1 text-[11px] font-bold py-1 rounded border bg-violet-500/20 text-violet-200 border-violet-400/50 hover:bg-violet-400/30',
-              onClick: () => { store.historyModal = true },
+              onClick: openHistoryModal,
             }, '历史关联'),
           ])
 

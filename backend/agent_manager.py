@@ -97,6 +97,10 @@ class AgentManager:
         self.last_diagnosis_text: str = ""      # 最近一次实时诊断文本（复盘/策略保存兜底）
         self.current_record_id: int | None = None  # 当前诊断对应的结果集记录 id（Task 6 使用）
         self.diagnosis_queue: list[dict] = []   # 排队中的诊断（运行中提交的新线路）
+        self._history_task: asyncio.Task | None = None  # 历史关联后台预取任务
+        self._history_sid: str | None = None     # 预取对应的 PLD 会话（换会话即失效）
+        self._history_cache: dict | None = None  # 预取结果 {"sections": [...]}
+        self._history_error: str | None = None   # 预取失败信息（弹窗打开时可重试）
 
     # ---------- 连接管理 ----------
     async def connect(self, ws: WebSocket):
@@ -295,15 +299,17 @@ class AgentManager:
         elif mtype == "history_relation":
             if not self.session_id:
                 await self.broadcast({"type": "history_relation", "error": "无活跃会话"})
+            elif self._history_sid == self.session_id and self._history_cache is not None:
+                # 预取已命中：秒回（复盘与实时同会话，不重复请求 KB）
+                await self.broadcast({"type": "history_relation",
+                                      "sections": self._history_cache["sections"]})
+            elif (self._history_sid == self.session_id and self._history_task
+                    and not self._history_task.done()):
+                pass  # 预取进行中，完成后会主动广播
             else:
-                try:
-                    result = await pld_client.history_relation(self.session_id)
-                    await self.broadcast({
-                        "type": "history_relation",
-                        "sections": result.get("sections", []),
-                    })
-                except Exception as e:
-                    await self.broadcast({"type": "history_relation", "error": str(e)})
+                # 未预取过或上次失败：立即（重）启动预取，完成后广播
+                self._history_sid = None  # 强制 _maybe_prefetch_history 重新起任务
+                self._maybe_prefetch_history(self.session_id)
 
     # ---------- 模板 / 策略管理 ----------
     async def send_templates(self):
@@ -364,6 +370,47 @@ class AgentManager:
                 await self.log("commander", "已有诊断任务在执行中，请等待完成后再发起。")
             return
         self.current_task = asyncio.create_task(self.run_diagnosis(replay=replay, text=text))
+
+    # ---------- 历史关联后台预取 ----------
+    def _maybe_prefetch_history(self, sid: str):
+        """后台预取历史关联（KB 串行两问可达 600s）。
+
+        触发时机：雷电工具结果事件（省份/电压此刻才写入会话，过早预取必得降级
+        结果并被 PLD 侧缓存毒化）与 _finish_run 兜底。
+        同会话重复调用为 no-op（复盘复用同一线路的缓存，不重复请求）；
+        换了会话则取消旧任务、清缓存后重新预取。
+        """
+        if sid == self._history_sid:
+            return
+        if self._history_task and not self._history_task.done():
+            self._history_task.cancel()
+        self._history_sid = sid
+        self._history_cache = None
+        self._history_error = None
+        self._history_task = asyncio.create_task(self._prefetch_history(sid))
+
+    async def _prefetch_history(self, sid: str):
+        try:
+            result = await pld_client.history_relation(sid)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            if sid != self._history_sid:
+                return  # 已换会话，旧任务结果不再广播
+            self._history_error = str(e)
+            await self.broadcast({"type": "history_relation", "error": str(e)})
+            return
+        if sid != self._history_sid:
+            return
+        sections = result.get("sections", [])
+        if any("无法生成此查询" in (s.get("answer") or "") for s in sections):
+            # 降级结果(省份/电压缺失,如本轮未调雷电工具):只展示不缓存,
+            # 复位 _history_sid 使下次触发(雷电结果/finish_run/点击)重新查询
+            self._history_sid = None
+            await self.broadcast({"type": "history_relation", "sections": sections})
+            return
+        self._history_cache = {"sections": sections}
+        await self.broadcast({"type": "history_relation", "sections": sections})
 
     async def _broadcast_queue(self):
         await self.broadcast({
@@ -459,6 +506,10 @@ class AgentManager:
                 sd = output.get("structured_data", {}) or {}
                 if aid:
                     tools_done.add(aid)
+                    if aid == "lightning" and sid:
+                        # 省份/电压随雷电工具输出写入会话(diagnose.py),此后预取才能拿到
+                        # 完整两问;此时仍在诊断中段,预取与报告生成并行
+                        self._maybe_prefetch_history(sid)
                     if self.status[aid] == "running":
                         await self.set_status(aid, "completed")
                     fault = sd.get("fault_type", "—")
@@ -858,6 +909,10 @@ class AgentManager:
         await asyncio.gather(*tasks)
 
     async def _finish_run(self, run_record: dict, summary: dict, replay: bool):
+        # 兜底预取：本轮未调用雷电工具(省份/电压本就缺失)或雷电结果事件漏挂钩时,
+        # 诊断结束后台预取历史关联,与报告展示并行
+        if self.session_id:
+            self._maybe_prefetch_history(self.session_id)
         # 拉取会话快照：权重 / 排除列表（人工干预的真实状态）
         session = None
         try:
